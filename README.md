@@ -28,7 +28,7 @@
 需要 dsh `>= 0.2.2-rc.1`（在 0.2.2-rc.1 上验证过）。
 
 ```bash
-git clone <this repo> && cd dsh-session-timeline
+git clone https://github.com/jkzing/dsh-session-timeline.git && cd dsh-session-timeline
 npm install          # 会顺带构建出 lib/
 dsh plugin --profile web add .
 ```
