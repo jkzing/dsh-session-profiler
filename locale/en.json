@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Session Timeline (dsh-session-timeline)",
+    "title": "Session Profiler (dsh-session-profiler)",
     "description": "Turns a session into a timeline: swim-lane call tracks, a flame graph and timing statistics that show whether time went to the model, to tools or to waiting."
   }
 }

@@ -165,7 +165,7 @@ export class TimelineChart {
     this.canvas.className = 'dst-canvas'
     this.canvas.tabIndex = 0
     const ctx = this.canvas.getContext('2d')
-    if (ctx === null) throw new Error('dsh-session-timeline: 2d canvas is unavailable')
+    if (ctx === null) throw new Error('dsh-session-profiler: 2d canvas is unavailable')
     this.ctx = ctx
     this.tip = document.createElement('div')
     this.tip.className = 'dst-tip'

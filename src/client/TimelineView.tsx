@@ -20,7 +20,7 @@ export interface TimelineViewProps {
 
 type ViewMode = 'tracks' | 'flame' | 'stats'
 
-const PREFS_KEY = 'dsh-session-timeline:prefs'
+const PREFS_KEY = 'dsh-session-profiler:prefs'
 
 interface Prefs {
   view: ViewMode

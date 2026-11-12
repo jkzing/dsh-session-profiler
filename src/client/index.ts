@@ -36,8 +36,8 @@ interface ClientContext {
 }
 
 const VIEW_SLOT = 'conversation.view'
-const VIEW_ID = 'session-timeline'
-const STYLE_ID = 'dsh-session-timeline-style'
+const VIEW_ID = 'session-profiler'
+const STYLE_ID = 'dsh-session-profiler-style'
 
 /** True when a previous load of this bundle already holds the tab (hot reload). */
 function seated(ctx: ClientContext): boolean {

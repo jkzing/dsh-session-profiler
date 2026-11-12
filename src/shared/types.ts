@@ -195,5 +195,5 @@ export type SpanDetailResponse =
   | { ok: true; detail: SpanDetail | null }
   | { ok: false; error: { code: string; message: string } }
 
-export const TIMELINE_ROUTE = 'api/dsh-session-timeline/timeline'
-export const DETAIL_ROUTE = 'api/dsh-session-timeline/span'
+export const TIMELINE_ROUTE = 'api/dsh-session-profiler/timeline'
+export const DETAIL_ROUTE = 'api/dsh-session-profiler/span'

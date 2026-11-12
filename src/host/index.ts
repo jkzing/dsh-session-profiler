@@ -14,7 +14,7 @@ import {
   type SpanDetailResponse, type Timeline, type TimelineResponse,
 } from '../shared/types.ts'
 
-export const name = 'dsh-session-timeline'
+export const name = 'dsh-session-profiler'
 
 export const inject = ['connection']
 

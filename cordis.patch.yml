@@ -5,7 +5,7 @@
 # Optional config (override in your profile's cordis.patch.yml):
 #
 #   - update:
-#       - id: dsh-session-timeline
+#       - id: dsh-session-profiler
 #         config:
 #           categories:
 #             - id: database
@@ -13,5 +13,5 @@
 #               color: '#f97316'
 #               match: '\b(psql|mysql|prisma)\b'
 - insert:
-    - id: dsh-session-timeline
-      name: dsh-session-timeline
+    - id: dsh-session-profiler
+      name: dsh-session-profiler

@@ -78,7 +78,7 @@ const page = `<!doctype html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>dsh-session-timeline preview</title>
+<title>dsh-session-profiler preview</title>
 <style>
   html, body { height: 100%; margin: 0; }
   body { background: #0f1420; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
@@ -99,7 +99,7 @@ const page = `<!doctype html>
 <script>
   const params = new URLSearchParams(location.search)
   if (params.get('theme') === 'light') document.body.classList.add('light')
-  if (params.get('view')) localStorage.setItem('dsh-session-timeline:prefs', JSON.stringify({ view: params.get('view') }))
+  if (params.get('view')) localStorage.setItem('dsh-session-profiler:prefs', JSON.stringify({ view: params.get('view') }))
   const modules = { react: React }
   const plugins = []
   window.__ModuleLoader__ = { load({ factory }) { plugins.push(factory(id => modules[id])) } }
@@ -126,7 +126,7 @@ const page = `<!doctype html>
     },
   }
   for (const plugin of plugins) plugin.apply(ctx)
-  document.title = view.registration.label() + ' · dsh-session-timeline'
+  document.title = view.registration.label() + ' · dsh-session-profiler'
   const View = props => view.component(props)
   ReactDOM.createRoot(document.getElementById('app')).render(React.createElement(View, { sessionId: params.get('session') ?? 'demo' }))
 </script>

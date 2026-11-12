@@ -1,8 +1,8 @@
 /** UI strings. The host locale service picks the dictionary; `en` is the fallback. */
-export const NS = 'dsh-session-timeline'
+export const NS = 'dsh-session-profiler'
 
 const zh: Record<string, string> = {
-  'tab': '时间线',
+  'tab': '分析',
   'title': '调用轨迹',
   'hint': '滚轮缩放 · 拖拽平移 · 点击查看详情 · 双击聚焦',
   'search': '搜索命令 / 文件名…',
@@ -109,7 +109,7 @@ const zh: Record<string, string> = {
 }
 
 const en: Record<string, string> = {
-  'tab': 'Timeline',
+  'tab': 'Profiler',
   'title': 'Call tracks',
   'hint': 'Scroll to zoom · drag to pan · click for details · double-click to focus',
   'search': 'Search commands / files…',
