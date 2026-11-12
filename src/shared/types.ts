@@ -1,5 +1,5 @@
 /**
- * Wire types shared by the host half (which folds a session log into a trace)
+ * Wire types shared by the host half (which folds a session log into a timeline)
  * and the browser half (which draws it). Field names are short on purpose:
  * a long session carries thousands of spans.
  */
@@ -45,7 +45,7 @@ export interface TokenUse {
   reasoning?: number
 }
 
-export interface TraceSpan {
+export interface TimelineSpan {
   /** Stable for a given log prefix: the n-th span opened by the log. */
   id: number
   kind: SpanKind
@@ -78,7 +78,7 @@ export interface TraceSpan {
   tok?: TokenUse
 }
 
-export interface TraceTurn {
+export interface TimelineTurn {
   turn: number
   s: number
   e: number
@@ -92,7 +92,7 @@ export interface TraceTurn {
   steps: number
 }
 
-export interface TraceStep {
+export interface TimelineStep {
   /** Index in the steps array. */
   id: number
   turn: number
@@ -103,7 +103,7 @@ export interface TraceStep {
   mod: number
 }
 
-export interface TracePhase {
+export interface TimelinePhase {
   s: number
   e: number
   turn: number
@@ -121,7 +121,7 @@ export interface CustomCategory {
   color?: string
 }
 
-export interface Trace {
+export interface Timeline {
   v: 1
   sessionId: string
   title?: string
@@ -131,38 +131,38 @@ export interface Trace {
   live: boolean
   /** A turn is in progress. */
   running: boolean
-  /** Host clock when the trace was built. */
+  /** Host clock when the timeline was built. */
   now: number
   /** First activity, epoch ms. */
   start: number
   /** Last activity (or `now` while running), epoch ms. */
   end: number
-  spans: TraceSpan[]
-  turns: TraceTurn[]
-  steps: TraceStep[]
-  phases: TracePhase[]
+  spans: TimelineSpan[]
+  turns: TimelineTurn[]
+  steps: TimelineStep[]
+  phases: TimelinePhase[]
   /** Config-defined lanes, in config order. */
   categories: CustomCategory[]
 }
 
-/** Request body of the trace route. */
-export interface TraceRequest {
+/** Request body of the timeline route. */
+export interface TimelineRequest {
   sessionId: string
-  /** Cursor of the trace the client already holds. */
+  /** Cursor of the timeline the client already holds. */
   since?: number
 }
 
-/** Changes to apply on top of the trace the client holds at `since`. */
-export interface TraceDelta extends Omit<Trace, 'spans' | 'steps'> {
+/** Changes to apply on top of the timeline the client holds at `since`. */
+export interface TimelineDelta extends Omit<Timeline, 'spans' | 'steps'> {
   /** Spans created or changed after `since`, plus every open span. */
-  spans: TraceSpan[]
+  spans: TimelineSpan[]
   /** Steps created or changed after `since`. */
-  steps: TraceStep[]
+  steps: TimelineStep[]
 }
 
-export type TraceResponse =
-  | { ok: true; mode: 'full'; trace: Trace }
-  | { ok: true; mode: 'delta'; delta: TraceDelta }
+export type TimelineResponse =
+  | { ok: true; mode: 'full'; timeline: Timeline }
+  | { ok: true; mode: 'delta'; delta: TimelineDelta }
   | { ok: true; mode: 'unchanged'; live: boolean; running: boolean; now: number }
   | { ok: true; mode: 'missing' }
   | { ok: false; error: { code: string; message: string } }
@@ -195,5 +195,5 @@ export type SpanDetailResponse =
   | { ok: true; detail: SpanDetail | null }
   | { ok: false; error: { code: string; message: string } }
 
-export const TRACE_ROUTE = 'api/dsh-session-trace/trace'
-export const DETAIL_ROUTE = 'api/dsh-session-trace/span'
+export const TIMELINE_ROUTE = 'api/dsh-session-timeline/timeline'
+export const DETAIL_ROUTE = 'api/dsh-session-timeline/span'

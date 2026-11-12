@@ -1,26 +1,26 @@
 /**
- * The trace tab: toolbar, timing summary, legend, the chart (tracks or
+ * The timeline tab: toolbar, timing summary, legend, the chart (tracks or
  * flame) or the statistics tables, and the detail panel for the selected span.
  */
 import { createElement as h, Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { summarize, type TraceStats } from '../shared/stats.ts'
-import type { Trace, TraceSpan } from '../shared/types.ts'
-import { TraceChart, type ChartOptions } from './chart.ts'
-import { useSpanDetail, useTrace } from './data.ts'
+import { summarize, type TimelineStats } from '../shared/stats.ts'
+import type { Timeline, TimelineSpan } from '../shared/types.ts'
+import { TimelineChart, type ChartOptions } from './chart.ts'
+import { useSpanDetail, useTimeline } from './data.ts'
 import { fmtClock, fmtCount, fmtDate, fmtDur, fmtDurLong, fmtPct } from './format.ts'
 import type { Translate } from './i18n.ts'
 import { laneOrder } from './layout.ts'
 import { colorOf, colorsFor, SEGMENT_COLOR } from './palette.ts'
 import { readTheme, watchTheme } from './theme.ts'
 
-export interface TraceViewProps {
+export interface TimelineViewProps {
   sessionId?: string
   t: Translate
 }
 
 type ViewMode = 'tracks' | 'flame' | 'stats'
 
-const PREFS_KEY = 'dsh-session-trace:prefs'
+const PREFS_KEY = 'dsh-session-timeline:prefs'
 
 interface Prefs {
   view: ViewMode
@@ -49,8 +49,8 @@ function savePrefs(prefs: Prefs): void {
   }
 }
 
-function categoryLabel(trace: Trace, t: Translate, id: string): string {
-  return trace.categories.find(category => category.id === id)?.label ?? t(`cat.${id}`)
+function categoryLabel(timeline: Timeline, t: Translate, id: string): string {
+  return timeline.categories.find(category => category.id === id)?.label ?? t(`cat.${id}`)
 }
 
 function Button(props: { onClick(): void; active?: boolean; title?: string; children?: ReactNode }): ReactNode {
@@ -67,7 +67,7 @@ function Button(props: { onClick(): void; active?: boolean; title?: string; chil
   )
 }
 
-function Summary(props: { stats: TraceStats; trace: Trace; t: Translate }): ReactNode {
+function Summary(props: { stats: TimelineStats; timeline: Timeline; t: Translate }): ReactNode {
   const { stats, t } = props
   const parts = [
     { key: 'model', value: stats.model, color: '#5b8def' },
@@ -127,16 +127,16 @@ function Summary(props: { stats: TraceStats; trace: Trace; t: Translate }): Reac
 }
 
 function Legend(props: {
-  trace: Trace
-  stats: TraceStats
+  timeline: Timeline
+  stats: TimelineStats
   colors: Record<string, string>
   hidden: ReadonlySet<string>
   onToggle(id: string): void
   t: Translate
 }): ReactNode {
-  const { trace, stats, colors, hidden, t } = props
+  const { timeline, stats, colors, hidden, t } = props
   const counts = new Map(stats.cats.map(cat => [cat.cat, cat.n]))
-  const ids = laneOrder(trace).filter(id => counts.has(id))
+  const ids = laneOrder(timeline).filter(id => counts.has(id))
   return (
     <div className="dst-legend">
       {ids.map(id => (
@@ -148,7 +148,7 @@ function Legend(props: {
           onClick={() => { props.onToggle(id) }}
         >
           <i style={{ background: colorOf(colors, id) }} />
-          {categoryLabel(trace, t, id)}
+          {categoryLabel(timeline, t, id)}
           <em>{counts.get(id)}</em>
         </button>
       ))}
@@ -163,23 +163,23 @@ function Bar(props: { value: number; max: number; color: string }): ReactNode {
 }
 
 function StatsTables(props: {
-  trace: Trace
-  stats: TraceStats
+  timeline: Timeline
+  stats: TimelineStats
   colors: Record<string, string>
-  onPick(span: TraceSpan): void
+  onPick(span: TimelineSpan): void
   t: Translate
 }): ReactNode {
-  const { trace, stats, colors, t } = props
+  const { timeline, stats, colors, t } = props
   const cats = useMemo(() => {
-    const order = laneOrder(trace)
+    const order = laneOrder(timeline)
     return stats.cats.filter(cat => cat.n > 0).sort((a, b) => order.indexOf(a.cat) - order.indexOf(b.cat))
-  }, [trace, stats])
+  }, [timeline, stats])
   const maxBusy = Math.max(1, ...cats.map(cat => cat.busy))
   const tools = stats.tools.slice(0, 16)
   const maxTool = Math.max(1, ...tools.map(tool => tool.sum))
   const slowest = useMemo(
-    () => trace.spans.filter(span => span.kind !== 'job' && span.kind !== 'agent').sort((a, b) => (b.e - b.s) - (a.e - a.s)).slice(0, 20),
-    [trace],
+    () => timeline.spans.filter(span => span.kind !== 'job' && span.kind !== 'agent').sort((a, b) => (b.e - b.s) - (a.e - a.s)).slice(0, 20),
+    [timeline],
   )
   const maxSlow = Math.max(1, ...slowest.map(span => span.e - span.s))
   return (
@@ -203,7 +203,7 @@ function StatsTables(props: {
           <tbody>
             {cats.map(cat => (
               <tr key={cat.cat}>
-                <td><i className="dst-dot" style={{ background: colorOf(colors, cat.cat) }} />{categoryLabel(trace, t, cat.cat)}</td>
+                <td><i className="dst-dot" style={{ background: colorOf(colors, cat.cat) }} />{categoryLabel(timeline, t, cat.cat)}</td>
                 <td className="dst-num">{cat.n}</td>
                 <td className="dst-num">{fmtDur(cat.busy)}</td>
                 <td className="dst-num">{fmtPct(cat.busy, stats.active)}</td>
@@ -289,15 +289,15 @@ function Block(props: { title: string; text: string; bad?: boolean }): ReactNode
 }
 
 function Detail(props: {
-  span: TraceSpan
-  trace: Trace
+  span: TimelineSpan
+  timeline: Timeline
   colors: Record<string, string>
   onClose(): void
   onFocus(): void
   t: Translate
 }): ReactNode {
-  const { span, trace, colors, t } = props
-  const { detail, status } = useSpanDetail(trace.sessionId, span.seq, span.mod)
+  const { span, timeline, colors, t } = props
+  const { detail, status } = useSpanDetail(timeline.sessionId, span.seq, span.mod)
   const duration = span.e - span.s
   const state = span.err ? 'error' : span.run ? 'running' : span.open ? 'open' : 'ok'
   const generation = span.segs?.filter(seg => seg.k !== 'wait').reduce((sum, seg) => sum + (seg.e - seg.s), 0) ?? 0
@@ -325,7 +325,7 @@ function Detail(props: {
           <dt>{t('detail.end')}</dt>
           <dd>{fmtDate(span.e)} {fmtClock(span.e, 1)}</dd>
           <dt>{t('detail.where')}</dt>
-          <dd>{t('detail.whereValue', { turn: span.turn, step: span.step })} · {categoryLabel(trace, t, span.cat)}</dd>
+          <dd>{t('detail.whereValue', { turn: span.turn, step: span.step })} · {categoryLabel(timeline, t, span.cat)}</dd>
           <dt>{t('detail.state')}</dt>
           <dd className={state === 'error' ? 'dst-bad' : undefined}>
             {t(`state.${state}`)}{detail?.errorCode !== undefined ? ` · ${detail.errorCode}` : ''}
@@ -376,9 +376,9 @@ function Detail(props: {
   )
 }
 
-export function TraceView(props: TraceViewProps): ReactNode {
+export function TimelineView(props: TimelineViewProps): ReactNode {
   const { sessionId, t } = props
-  const { trace, status, error, reload } = useTrace(sessionId)
+  const { timeline, status, error, reload } = useTimeline(sessionId)
   const [prefs, setPrefs] = useState(loadPrefs)
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
   const [query, setQuery] = useState('')
@@ -387,22 +387,22 @@ export function TraceView(props: TraceViewProps): ReactNode {
 
   const rootRef = useRef<HTMLDivElement | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
-  const chartRef = useRef<TraceChart | null>(null)
+  const chartRef = useRef<TimelineChart | null>(null)
   const translate = useRef(t)
   translate.current = t
 
-  const colors = useMemo(() => colorsFor(trace), [trace?.categories])
-  const stats = useMemo(() => (trace === null ? null : summarize(trace)), [trace])
+  const colors = useMemo(() => colorsFor(timeline), [timeline?.categories])
+  const stats = useMemo(() => (timeline === null ? null : summarize(timeline)), [timeline])
   const selected = useMemo(
-    () => (trace === null || selectedId === null ? null : trace.spans.find(span => span.id === selectedId) ?? null),
-    [trace, selectedId],
+    () => (timeline === null || selectedId === null ? null : timeline.spans.find(span => span.id === selectedId) ?? null),
+    [timeline, selectedId],
   )
   const chartView = prefs.view === 'flame' ? 'flame' : 'tracks'
   const options: ChartOptions = useMemo(
     () => ({ view: chartView, fold: prefs.fold, showBackground: prefs.showBackground, hidden, query }),
     [chartView, prefs.fold, prefs.showBackground, hidden, query],
   )
-  const hasData = trace !== null && (trace.spans.length > 0 || trace.turns.length > 0)
+  const hasData = timeline !== null && (timeline.spans.length > 0 || timeline.turns.length > 0)
 
   const update = useCallback((patch: Partial<Prefs>) => {
     setPrefs((previous) => {
@@ -417,7 +417,7 @@ export function TraceView(props: TraceViewProps): ReactNode {
     const host = hostRef.current
     const root = rootRef.current
     if (host === null || root === null) return
-    const chart = new TraceChart(host, readTheme(root), (key, params) => translate.current(key, params), {
+    const chart = new TimelineChart(host, readTheme(root), (key, params) => translate.current(key, params), {
       onSelect: span => { setSelectedId(span?.id ?? null) },
       onMatches: count => { setMatches(count) },
     })
@@ -431,7 +431,7 @@ export function TraceView(props: TraceViewProps): ReactNode {
   }, [hasData])
 
   useEffect(() => { chartRef.current?.setOptions(options) }, [options, hasData])
-  useEffect(() => { chartRef.current?.setTrace(trace, colors) }, [trace, colors, hasData])
+  useEffect(() => { chartRef.current?.setTimeline(timeline, colors) }, [timeline, colors, hasData])
   useEffect(() => { chartRef.current?.setSelected(selectedId) }, [selectedId, hasData])
   useEffect(() => { setSelectedId(null) }, [sessionId])
 
@@ -444,7 +444,7 @@ export function TraceView(props: TraceViewProps): ReactNode {
     })
   }, [])
 
-  const pick = useCallback((span: TraceSpan) => {
+  const pick = useCallback((span: TimelineSpan) => {
     update({ view: 'tracks' })
     setSelectedId(span.id)
     // The chart host is hidden while the tables show; focus once it has a size again.
@@ -452,7 +452,7 @@ export function TraceView(props: TraceViewProps): ReactNode {
   }, [update])
 
   let body: ReactNode
-  if (!hasData || trace === null || stats === null) {
+  if (!hasData || timeline === null || stats === null) {
     body = (
       <div className="dst-empty">
         {status === 'loading' && <span>{t('status.loading')}</span>}
@@ -469,15 +469,15 @@ export function TraceView(props: TraceViewProps): ReactNode {
   } else {
     body = (
       <Fragment>
-        <Summary stats={stats} trace={trace} t={t} />
-        <Legend trace={trace} stats={stats} colors={colors} hidden={hidden} onToggle={toggleCategory} t={t} />
+        <Summary stats={stats} timeline={timeline} t={t} />
+        <Legend timeline={timeline} stats={stats} colors={colors} hidden={hidden} onToggle={toggleCategory} t={t} />
         <div className="dst-body">
           <div className="dst-chart" ref={hostRef} hidden={prefs.view === 'stats'} />
-          {prefs.view === 'stats' && <StatsTables trace={trace} stats={stats} colors={colors} onPick={pick} t={t} />}
+          {prefs.view === 'stats' && <StatsTables timeline={timeline} stats={stats} colors={colors} onPick={pick} t={t} />}
           {selected !== null && prefs.view !== 'stats' && (
             <Detail
               span={selected}
-              trace={trace}
+              timeline={timeline}
               colors={colors}
               onClose={() => { setSelectedId(null) }}
               onFocus={() => { chartRef.current?.focusSpan(selected) }}
@@ -495,7 +495,7 @@ export function TraceView(props: TraceViewProps): ReactNode {
       <div className="dst-toolbar">
         <div className="dst-title">
           <b>{t('title')}</b>
-          {trace?.running === true && <span className="dst-live"><i />{t('status.live')}</span>}
+          {timeline?.running === true && <span className="dst-live"><i />{t('status.live')}</span>}
           <span className="dst-hint">{t('hint')}</span>
         </div>
         <span className="dst-spacer" />

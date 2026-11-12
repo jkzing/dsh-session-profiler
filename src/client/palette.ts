@@ -1,5 +1,5 @@
 /** Lane colors. Fixed hues that read on both the dark and the light host theme. */
-import type { Trace } from '../shared/types.ts'
+import type { Timeline } from '../shared/types.ts'
 
 export const CATEGORY_COLOR: Record<string, string> = {
   model: '#5b8def',
@@ -34,9 +34,9 @@ const CUSTOM_RAMP = ['#34d399', '#f97316', '#60a5fa', '#facc15', '#c084fc', '#fb
 
 export const ERROR_COLOR = '#ef4444'
 
-export function colorsFor(trace: Trace | null): Record<string, string> {
+export function colorsFor(timeline: Timeline | null): Record<string, string> {
   const colors = { ...CATEGORY_COLOR }
-  trace?.categories.forEach((category, index) => {
+  timeline?.categories.forEach((category, index) => {
     colors[category.id] = category.color ?? (CUSTOM_RAMP[index % CUSTOM_RAMP.length] as string)
   })
   return colors

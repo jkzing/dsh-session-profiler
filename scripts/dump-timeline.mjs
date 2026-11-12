@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Offline fold: decode a persisted dsh session log and print its trace as JSON.
+ * Offline fold: decode a persisted dsh session log and print its timeline as JSON.
  *
- *   node scripts/dump-trace.mjs <session dir | session.vN.jsonl.zstd | .jsonl> [--summary]
+ *   node scripts/dump-timeline.mjs <session dir | session.vN.jsonl.zstd | .jsonl> [--summary]
  *
  * The persisted log is a concatenation of Zstandard frames, which the `zstd`
  * CLI decodes; a plain .jsonl file is read as is.
@@ -10,7 +10,7 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { buildTrace } from '../src/shared/build.ts'
+import { buildTimeline } from '../src/shared/build.ts'
 import { summarize } from '../src/shared/stats.ts'
 
 export function resolveLog(input) {
@@ -35,9 +35,9 @@ export function readLog(file) {
   return { header, events }
 }
 
-export function traceOfLog(file, options = {}) {
+export function timelineOfLog(file, options = {}) {
   const { header, events } = readLog(resolveLog(file))
-  return buildTrace(events, {
+  return buildTimeline(events, {
     sessionId: header.id ?? 'unknown',
     live: false,
     now: Date.now(),
@@ -48,14 +48,14 @@ export function traceOfLog(file, options = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const [input, flag] = process.argv.slice(2)
   if (input === undefined) {
-    console.error('usage: node scripts/dump-trace.mjs <session dir | log file> [--summary]')
+    console.error('usage: node scripts/dump-timeline.mjs <session dir | log file> [--summary]')
     process.exit(2)
   }
-  const trace = traceOfLog(input)
+  const timeline = timelineOfLog(input)
   if (flag === '--summary') {
-    const { spans, steps, ...rest } = trace
-    console.log(JSON.stringify({ ...rest, spans: spans.length, steps: steps.length, stats: summarize(trace) }, null, 2))
+    const { spans, steps, ...rest } = timeline
+    console.log(JSON.stringify({ ...rest, spans: spans.length, steps: steps.length, stats: summarize(timeline) }, null, 2))
   } else {
-    console.log(JSON.stringify(trace))
+    console.log(JSON.stringify(timeline))
   }
 }

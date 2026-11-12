@@ -1,10 +1,10 @@
-# dsh-session-trace
+# dsh-session-timeline
 
-把一次 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）会话画成 trace：按类别分道的**调用轨迹图**、**火焰图**和**耗时统计**，看清时间花在模型、工具，还是等人上。
+把一次 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）会话画成时间线：按类别分道的**调用轨迹图**、**火焰图**和**耗时统计**，看清时间花在模型、工具，还是等人上。
 
 ![调用轨迹](docs/tracks.png)
 
-安装后，每个会话的标签栏里会多出一个 **分析** 标签页（在「轨迹」右边）。
+安装后，每个会话的标签栏里会多出一个 **时间线** 标签页（在「轨迹」右边）。
 
 ## 能看到什么
 
@@ -27,7 +27,7 @@
 需要 dsh `>= 0.2.2-rc.1`（在 0.2.2-rc.1 上验证过）。
 
 ```bash
-git clone <this repo> && cd dsh-session-trace
+git clone <this repo> && cd dsh-session-timeline
 npm install          # 会顺带构建出 lib/
 dsh plugin --profile web add .
 ```
@@ -35,7 +35,7 @@ dsh plugin --profile web add .
 然后重启 `dsh web`。卸载：
 
 ```bash
-dsh plugin --profile web remove dsh-session-trace
+dsh plugin --profile web remove dsh-session-timeline
 ```
 
 ## 自定义泳道
@@ -44,7 +44,7 @@ dsh plugin --profile web remove dsh-session-trace
 
 ```yaml
 - update:
-    - id: dsh-session-trace
+    - id: dsh-session-timeline
       config:
         categories:
           - id: database
@@ -58,14 +58,14 @@ dsh plugin --profile web remove dsh-session-trace
 ## 工作方式
 
 ```
-src/shared   事件 → trace 的纯函数（主机、测试、离线脚本共用）
-src/host     主机端：两个 POST 路由，读会话事件并折叠成 trace
+src/shared   事件 → 时间线数据的纯函数（主机、测试、离线脚本共用）
+src/host     主机端：两个 POST 路由，读会话事件并折叠成时间线数据
 src/client   浏览器端：标签页、Canvas 图表、统计表、详情面板
 ```
 
 - 主机端不订阅任何事件，也不往会话日志里写东西。每次请求通过 `sessionQuery.observeSession` 读取已提交的事件——在线会话走内存，冷会话走持久化。
-- `POST api/dsh-session-trace/trace { sessionId, since? }` 返回整份 trace，或自 `since` 以来变化的 span（span 的 id 只由日志前缀决定，所以增量合并是确定的）。
-- `POST api/dsh-session-trace/span { sessionId, seq }` 返回某个 span 的参数与结果，点击时才取。
+- `POST api/dsh-session-timeline/timeline { sessionId, since? }` 返回整份时间线数据，或自 `since` 以来变化的 span（span 的 id 只由日志前缀决定，所以增量合并是确定的）。
+- `POST api/dsh-session-timeline/span { sessionId, seq }` 返回某个 span 的参数与结果，点击时才取。
 - 浏览器端注册到 `conversation.view` 插槽。在这个标签页显示期间，对话的输入框会让出位置（有待处理的审批或计划评审时除外）。
 
 用到的事件：`turn/*`、`step/*`、`assistant/message`、`assistant/attempt`、`tool/call`、`tool/result`、`tool/ptc-dispatch*`、`job/registered`、`job/settled`、`approval/*`、`subagent/catalog`、`agent/inbox/spliced`、`todo/write`、`llm/retry-started`、`compaction/*`、`command/*`。
@@ -95,7 +95,7 @@ npm run preview      # 不依赖 dsh 的预览页：http://127.0.0.1:4173/
 离线把一份会话折叠成 JSON：
 
 ```bash
-npm run trace -- ~/.dsh/sessions/<工作区>/<会话> --summary
+npm run timeline -- ~/.dsh/sessions/<工作区>/<会话> --summary
 ```
 
 想在真实的 dsh 里试而不动自己的 profile，可以用一个临时的 `DSH_HOME`：

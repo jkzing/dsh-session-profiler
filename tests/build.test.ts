@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyDelta, buildTrace, deltaSince, spanDetail, type LogEvent } from '../src/shared/build.ts'
+import { applyDelta, buildTimeline, deltaSince, spanDetail, type LogEvent } from '../src/shared/build.ts'
 import { classifyTool, compileRules } from '../src/shared/classify.ts'
 import { summarize, unionLength } from '../src/shared/stats.ts'
 
@@ -51,20 +51,20 @@ const BASIC = log([
 ])
 
 test('folds turns, steps, model and tool spans', () => {
-  const trace = buildTrace(BASIC, { sessionId: 's', live: false, now: T0 + 99_999 })
-  assert.equal(trace.cursor, 12)
-  assert.equal(trace.running, false)
-  assert.equal(trace.turns.length, 1)
+  const timeline = buildTimeline(BASIC, { sessionId: 's', live: false, now: T0 + 99_999 })
+  assert.equal(timeline.cursor, 12)
+  assert.equal(timeline.running, false)
+  assert.equal(timeline.turns.length, 1)
   assert.deepEqual(
-    { label: trace.turns[0]?.label, reason: trace.turns[0]?.reason, steps: trace.turns[0]?.steps, source: trace.turns[0]?.source },
+    { label: timeline.turns[0]?.label, reason: timeline.turns[0]?.reason, steps: timeline.turns[0]?.steps, source: timeline.turns[0]?.source },
     { label: 'fix the bug', reason: 'completed', steps: 1, source: 'user' },
   )
-  assert.equal(trace.start, T0)
-  assert.equal(trace.end, T0 + 5040)
+  assert.equal(timeline.start, T0)
+  assert.equal(timeline.end, T0 + 5040)
 
   // The foreground job is folded into its tool call rather than drawn twice.
-  assert.deepEqual(trace.spans.map(s => s.kind), ['model', 'tool', 'tool'])
-  const [model, build, read] = trace.spans
+  assert.deepEqual(timeline.spans.map(s => s.kind), ['model', 'tool', 'tool'])
+  const [model, build, read] = timeline.spans
   assert.deepEqual([model?.s, model?.e, model?.name], [T0 + 15, T0 + 2000, 'm-1'])
   assert.deepEqual(model?.segs?.map(seg => [seg.k, seg.s - T0, seg.e - T0]), [
     ['wait', 15, 500], ['think', 500, 1200], ['call', 1300, 1900],
@@ -86,16 +86,16 @@ test('a process that outlives its call becomes a background span', () => {
     ['turn/end', 160, { turn: 1, reason: { kind: 'completed' } }],
     ['job/settled', 90_000, { jobId: 'j1', finishedAt: T0 + 90_000, status: 'killed' }],
   ])
-  const trace = buildTrace(events, { sessionId: 's', live: false, now: T0 + 99_999 })
-  const job = trace.spans.find(s => s.kind === 'job')
+  const timeline = buildTimeline(events, { sessionId: 's', live: false, now: T0 + 99_999 })
+  const job = timeline.spans.find(s => s.kind === 'job')
   assert.ok(job)
   assert.deepEqual([job.bg, job.cat, job.s - T0, job.e - T0, job.open, job.parent], [true, 'build', 110, 90_000, undefined, 1])
 
   // Before it settles the process is open; in a live session it is still running.
-  const cut = buildTrace(events.slice(0, 8), { sessionId: 's', live: true, now: T0 + 60_000 })
+  const cut = buildTimeline(events.slice(0, 8), { sessionId: 's', live: true, now: T0 + 60_000 })
   const running = cut.spans.find(s => s.kind === 'job')
   assert.deepEqual([running?.open, running?.run, running?.e! - T0], [true, true, 60_000])
-  // …but it does not stretch a finished turn's trace to "now".
+  // …but it does not stretch a finished turn's timeline to "now".
   assert.equal(cut.end, T0 + 160)
 })
 
@@ -106,13 +106,13 @@ test('open spans: running in a live turn, frozen when the turn ended without a r
     ['assistant/message', 100, assistant(50, [])],
     ['tool/call', 101, call('c1', 'bash', { command: 'sleep 100' })],
   ])
-  const live = buildTrace(events, { sessionId: 's', live: true, now: T0 + 4000 })
+  const live = buildTimeline(events, { sessionId: 's', live: true, now: T0 + 4000 })
   assert.equal(live.running, true)
   assert.deepEqual([live.spans[1]?.open, live.spans[1]?.run, live.spans[1]?.e! - T0], [true, true, 4000])
   assert.equal(live.end, T0 + 4000)
   assert.equal(live.turns[0]?.open, true)
 
-  const aborted = buildTrace(
+  const aborted = buildTimeline(
     [...events, ...log([['turn/end', 900, { turn: 1, reason: { kind: 'aborted' } }]]).map(e => ({ ...e, seq: 4 }))],
     { sessionId: 's', live: true, now: T0 + 4000 },
   )
@@ -132,8 +132,8 @@ test('failed attempts and retries are separate model spans', () => {
     ['step/end', 3001, { turn: 1, step: 1 }],
     ['turn/end', 3002, { turn: 1, reason: { kind: 'completed' } }],
   ])
-  const trace = buildTrace(events, { sessionId: 's', live: false, now: T0 })
-  assert.deepEqual(trace.spans.map(s => [s.s - T0, s.e - T0, s.err ?? false]), [[10, 800, true], [1300, 3000, false]])
+  const timeline = buildTimeline(events, { sessionId: 's', live: false, now: T0 })
+  assert.deepEqual(timeline.spans.map(s => [s.s - T0, s.e - T0, s.err ?? false]), [[10, 800, true], [1300, 3000, false]])
   assert.deepEqual(spanDetail(events, 2), { seq: 2, result: 'boom', isError: true, errorCode: 'SERVER' })
 })
 
@@ -148,8 +148,8 @@ test('phases follow the in-progress todo', () => {
     ['todo/write', 300_000, todo(['explore', 'completed'], ['build', 'completed'])],
     ['turn/end', 330_000, { turn: 1, reason: { kind: 'completed' } }],
   ])
-  const trace = buildTrace(events, { sessionId: 's', live: false, now: T0 })
-  assert.deepEqual(trace.phases.map(p => [p.src, p.label, p.s - T0, p.e - T0]), [
+  const timeline = buildTimeline(events, { sessionId: 's', live: false, now: T0 })
+  assert.deepEqual(timeline.phases.map(p => [p.src, p.label, p.s - T0, p.e - T0]), [
     ['prompt', 'ship it', 0, 90_000],
     ['todo', 'explore', 90_000, 200_000],
     ['todo', 'build', 200_000, 300_000],
@@ -164,7 +164,7 @@ test('phases follow the in-progress todo', () => {
     ['todo/write', 50_000, todo(['explore', 'completed'])],
     ['turn/end', 52_000, { turn: 1, reason: { kind: 'completed' } }],
   ])
-  const merged = buildTrace(quick, { sessionId: 's', live: false, now: T0 })
+  const merged = buildTimeline(quick, { sessionId: 's', live: false, now: T0 })
   assert.deepEqual(merged.phases.map(p => [p.src, p.label, p.s - T0, p.e - T0]), [['todo', 'explore', 0, 52_000]])
   assert.equal(merged.turns[0]?.label, 'ship it')
 })
@@ -180,8 +180,8 @@ test('subagents run from launch until they settle, and again when messaged', () 
     ['tool/result', 9010, result('c2')],
     ['turn/end', 9500, { turn: 1, reason: { kind: 'completed' } }],
   ])
-  const trace = buildTrace(events, { sessionId: 's', live: false, now: T0 })
-  const agents = trace.spans.filter(s => s.kind === 'agent')
+  const timeline = buildTimeline(events, { sessionId: 's', live: false, now: T0 })
+  const agents = timeline.spans.filter(s => s.kind === 'agent')
   assert.deepEqual(agents.map(s => [s.label, s.s - T0, s.e - T0, s.open ?? false]), [
     ['audit', 110, 8000, false],
     ['audit', 9000, 9500, true],
@@ -191,19 +191,19 @@ test('subagents run from launch until they settle, and again when messaged', () 
 test('delta carries exactly what changed since the client cursor', () => {
   const options = { sessionId: 's', live: true, now: T0 + 6000 }
   for (let at = 1; at < BASIC.length; at++) {
-    const before = buildTrace(BASIC.slice(0, at), options)
-    const after = buildTrace(BASIC, options)
+    const before = buildTimeline(BASIC.slice(0, at), options)
+    const after = buildTimeline(BASIC, options)
     const delta = deltaSince(after, before.cursor)
     assert.deepEqual(applyDelta(before, delta), after, `prefix of ${at} events`)
   }
-  const full = buildTrace(BASIC, options)
+  const full = buildTimeline(BASIC, options)
   assert.deepEqual(deltaSince(full, full.cursor).spans, [])
 })
 
 test('inherited fork prefix is skipped', () => {
-  const trace = buildTrace(BASIC, { sessionId: 's', live: false, now: T0, inherited: 9 })
-  assert.deepEqual(trace.spans.map(s => s.name), ['read'])
-  assert.equal(trace.turns.length, 0)
+  const timeline = buildTimeline(BASIC, { sessionId: 's', live: false, now: T0, inherited: 9 })
+  assert.deepEqual(timeline.spans.map(s => s.name), ['read'])
+  assert.equal(timeline.turns.length, 0)
 })
 
 test('span detail returns arguments and the paired result', () => {
@@ -248,8 +248,8 @@ test('classification: custom rules win and bad rules are reported', () => {
 
 test('statistics partition the time inside turns', () => {
   assert.equal(unionLength([[0, 10], [5, 20], [30, 40]]), 30)
-  const trace = buildTrace(BASIC, { sessionId: 's', live: false, now: T0 })
-  const stats = summarize(trace)
+  const timeline = buildTimeline(BASIC, { sessionId: 's', live: false, now: T0 })
+  const stats = summarize(timeline)
   assert.equal(stats.active, 5040)
   assert.equal(stats.model, 1985)
   assert.equal(stats.tool, 3000 + 28)

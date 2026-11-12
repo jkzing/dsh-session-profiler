@@ -7,7 +7,7 @@
  * "virtual milliseconds": inside an active segment one virtual ms is one real
  * ms, and a folded gap is `gapWidth` virtual ms wide whatever its real length.
  */
-import type { Trace } from '../shared/types.ts'
+import type { Timeline } from '../shared/types.ts'
 
 export interface Segment {
   /** Real start/end. */
@@ -25,7 +25,7 @@ export interface Gap {
 }
 
 export interface TimeScale {
-  /** Virtual length of the whole trace. */
+  /** Virtual length of the whole timeline. */
   length: number
   segments: Segment[]
   gaps: Gap[]
@@ -41,9 +41,9 @@ export const MIN_FOLD_MS = 60_000
 type Interval = [number, number]
 
 /** Merged intervals in which the session was doing something. */
-export function activeIntervals(trace: Trace): Interval[] {
-  const raw: Interval[] = trace.turns.map(turn => [turn.s, turn.e])
-  for (const span of trace.spans) {
+export function activeIntervals(timeline: Timeline): Interval[] {
+  const raw: Interval[] = timeline.turns.map(turn => [turn.s, turn.e])
+  for (const span of timeline.spans) {
     // Background processes and subagents run across idle time; they must not unfold it.
     if (span.kind === 'job' || span.kind === 'agent') continue
     raw.push([span.s, span.e])
@@ -58,12 +58,12 @@ export function activeIntervals(trace: Trace): Interval[] {
   return merged
 }
 
-export function makeScale(trace: Trace, fold: boolean): TimeScale {
-  const start = trace.start
-  const end = Math.max(trace.end, start + 1)
-  let intervals: Interval[] = fold ? activeIntervals(trace) : []
+export function makeScale(timeline: Timeline, fold: boolean): TimeScale {
+  const start = timeline.start
+  const end = Math.max(timeline.end, start + 1)
+  let intervals: Interval[] = fold ? activeIntervals(timeline) : []
   if (intervals.length === 0) intervals = [[start, end]]
-  // Stretch the first and last interval to the trace bounds so every time maps somewhere.
+  // Stretch the first and last interval to the timeline bounds so every time maps somewhere.
   ;(intervals[0] as Interval)[0] = Math.min((intervals[0] as Interval)[0], start)
   ;(intervals[intervals.length - 1] as Interval)[1] = Math.max((intervals[intervals.length - 1] as Interval)[1], end)
 

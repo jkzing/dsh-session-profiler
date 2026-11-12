@@ -1,5 +1,5 @@
 /*
- * dsh-session-trace. Every class is prefixed `dst-`. Colors come from the
+ * dsh-session-timeline. Every class is prefixed `dst-`. Colors come from the
  * host theme's semantic tokens; the fallbacks are the dark palette used when
  * the page defines none (the standalone preview).
  */
@@ -32,7 +32,7 @@
   line-height: 18px;
 }
 /*
- * The trace needs the height more than it needs a prompt box: while this tab
+ * The timeline needs the height more than it needs a prompt box: while this tab
  * is showing, the conversation's composer steps aside. It stays whenever it
  * carries something that blocks the agent (an approval or a plan review).
  */

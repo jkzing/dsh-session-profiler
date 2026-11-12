@@ -3,15 +3,15 @@ import { test } from 'node:test'
 import { fmtDur, fmtDurLong } from '../src/client/format.ts'
 import { flameLanes, packRows, trackLanes } from '../src/client/layout.ts'
 import { makeScale, tickStep, ticksIn } from '../src/client/timescale.ts'
-import type { Trace, TraceSpan } from '../src/shared/types.ts'
+import type { Timeline, TimelineSpan } from '../src/shared/types.ts'
 
 const HOUR = 3_600_000
 
-function span(id: number, s: number, e: number, extra: Partial<TraceSpan> = {}): TraceSpan {
+function span(id: number, s: number, e: number, extra: Partial<TimelineSpan> = {}): TimelineSpan {
   return { id, kind: 'tool', cat: 'shell', name: 'bash', label: '', s, e, turn: 1, step: 1, seq: id, mod: id, ...extra }
 }
 
-function trace(turns: [number, number][], spans: TraceSpan[] = []): Trace {
+function timeline(turns: [number, number][], spans: TimelineSpan[] = []): Timeline {
   return {
     v: 1, sessionId: 's', cursor: 0, live: false, running: false, now: 0,
     start: turns[0]?.[0] ?? 0, end: Math.max(...turns.map(t => t[1]), ...spans.map(s => s.e)),
@@ -21,7 +21,7 @@ function trace(turns: [number, number][], spans: TraceSpan[] = []): Trace {
 }
 
 test('folding collapses long idle gaps and stays invertible', () => {
-  const t = trace([[0, 10 * 60_000], [5 * HOUR, 5 * HOUR + 20 * 60_000]])
+  const t = timeline([[0, 10 * 60_000], [5 * HOUR, 5 * HOUR + 20 * 60_000]])
   const folded = makeScale(t, true)
   assert.equal(folded.segments.length, 2)
   assert.equal(folded.gaps.length, 1)
@@ -41,15 +41,15 @@ test('folding collapses long idle gaps and stays invertible', () => {
 })
 
 test('short gaps are not folded, and background spans do not unfold idle time', () => {
-  const short = makeScale(trace([[0, 60_000], [90_000, 150_000]]), true)
+  const short = makeScale(timeline([[0, 60_000], [90_000, 150_000]]), true)
   assert.equal(short.gaps.length, 0)
-  const background = makeScale(trace([[0, 60_000], [HOUR, HOUR + 60_000]], [span(1, 30_000, HOUR + 30_000, { kind: 'job', bg: true })]), true)
+  const background = makeScale(timeline([[0, 60_000], [HOUR, HOUR + 60_000]], [span(1, 30_000, HOUR + 30_000, { kind: 'job', bg: true })]), true)
   assert.equal(background.gaps.length, 1)
 })
 
 test('ticks land on round local times and skip folded gaps', () => {
   const base = new Date(2026, 0, 5, 16, 0, 0).getTime()
-  const t = trace([[base + 7 * 60_000, base + 50 * 60_000], [base + 6 * HOUR, base + 6 * HOUR + 30 * 60_000]])
+  const t = timeline([[base + 7 * 60_000, base + 50 * 60_000], [base + 6 * HOUR, base + 6 * HOUR + 30 * 60_000]])
   const scale = makeScale(t, true)
   const step = tickStep(900 / scale.length, 100)
   assert.equal(step, 10 * 60_000)
@@ -69,7 +69,7 @@ test('row packing separates overlaps and caps the row count', () => {
 })
 
 test('lanes: ordered by category, background processes optional', () => {
-  const t = trace([[0, 100]], [
+  const t = timeline([[0, 100]], [
     span(0, 0, 10, { cat: 'read' }),
     span(1, 0, 50, { cat: 'model', kind: 'model' }),
     span(2, 20, 90, { cat: 'build', kind: 'job', bg: true, parent: 3 }),

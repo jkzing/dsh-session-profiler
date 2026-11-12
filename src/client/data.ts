@@ -1,13 +1,13 @@
-/** Trace loading and polling for one session. */
+/** Timeline loading and polling for one session. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { applyDelta } from '../shared/build.ts'
 import {
-  DETAIL_ROUTE, TRACE_ROUTE,
-  type SpanDetail, type SpanDetailResponse, type Trace, type TraceResponse,
+  DETAIL_ROUTE, TIMELINE_ROUTE,
+  type SpanDetail, type SpanDetailResponse, type Timeline, type TimelineResponse,
 } from '../shared/types.ts'
 
-export interface TraceState {
-  trace: Trace | null
+export interface TimelineState {
+  timeline: Timeline | null
   status: 'loading' | 'ready' | 'missing' | 'error'
   error?: string
   reload(): void
@@ -24,20 +24,20 @@ async function post<T>(route: string, body: unknown, signal?: AbortSignal): Prom
   return await response.json() as T
 }
 
-/** While a turn runs the trace grows every second or two; an idle session only needs a heartbeat. */
+/** While a turn runs the timeline grows every second or two; an idle session only needs a heartbeat. */
 const POLL_RUNNING_MS = 1500
 const POLL_LIVE_MS = 4000
 const POLL_COLD_MS = 10_000
 
-export function useTrace(sessionId: string | undefined): TraceState {
-  const [state, setState] = useState<Omit<TraceState, 'reload'>>({ trace: null, status: 'loading' })
+export function useTimeline(sessionId: string | undefined): TimelineState {
+  const [state, setState] = useState<Omit<TimelineState, 'reload'>>({ timeline: null, status: 'loading' })
   const [generation, setGeneration] = useState(0)
   const reload = useCallback(() => { setGeneration(value => value + 1) }, [])
-  const held = useRef<Trace | null>(null)
+  const held = useRef<Timeline | null>(null)
 
   useEffect(() => {
     held.current = null
-    setState({ trace: null, status: 'loading' })
+    setState({ timeline: null, status: 'loading' })
     if (sessionId === undefined || sessionId === '') return
     const abort = new AbortController()
     let timer = 0
@@ -49,44 +49,44 @@ export function useTrace(sessionId: string | undefined): TraceState {
     }
     const tick = async (): Promise<void> => {
       if (stopped) return
-      // A hidden tab keeps its trace; it catches up on the first poll after it is shown again.
+      // A hidden tab keeps its timeline; it catches up on the first poll after it is shown again.
       if (document.hidden) {
         schedule(POLL_LIVE_MS)
         return
       }
       const current = held.current
       try {
-        const response = await post<TraceResponse>(
-          TRACE_ROUTE,
+        const response = await post<TimelineResponse>(
+          TIMELINE_ROUTE,
           current === null ? { sessionId } : { sessionId, since: current.cursor },
           abort.signal,
         )
         if (stopped) return
         if (!response.ok) throw new Error(response.error.message)
         let next = current
-        if (response.mode === 'full') next = response.trace
+        if (response.mode === 'full') next = response.timeline
         else if (response.mode === 'delta' && current !== null) next = applyDelta(current, response.delta)
         else if (response.mode === 'unchanged' && current !== null
           && (current.live !== response.live || current.running !== response.running)) {
           next = { ...current, live: response.live, running: response.running }
         } else if (response.mode === 'missing') {
           held.current = null
-          setState({ trace: null, status: 'missing' })
+          setState({ timeline: null, status: 'missing' })
           schedule(POLL_COLD_MS)
           return
         }
         if (next !== null && next !== current) {
           held.current = next
-          setState({ trace: next, status: 'ready' })
+          setState({ timeline: next, status: 'ready' })
         } else if (next !== null) {
-          setState(previous => (previous.status === 'ready' ? previous : { trace: next, status: 'ready' }))
+          setState(previous => (previous.status === 'ready' ? previous : { timeline: next, status: 'ready' }))
         }
         schedule(next?.running ? POLL_RUNNING_MS : next?.live ? POLL_LIVE_MS : POLL_COLD_MS)
       } catch (error) {
         if (stopped || abort.signal.aborted) return
         // Keep showing what we have; only an empty view turns into an error screen.
         if (held.current === null) {
-          setState({ trace: null, status: 'error', error: error instanceof Error ? error.message : String(error) })
+          setState({ timeline: null, status: 'error', error: error instanceof Error ? error.message : String(error) })
         }
         schedule(POLL_COLD_MS)
       }

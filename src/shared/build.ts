@@ -1,5 +1,5 @@
 /**
- * Session log → trace. One synchronous pass over the committed events; no
+ * Session log → timeline. One synchronous pass over the committed events; no
  * host services, so the same fold runs in the host route, in tests and in the
  * offline dump script.
  *
@@ -10,7 +10,7 @@
  */
 import { classifyJob, classifyTool, clip, parseArgs, type RuleSet } from './classify.ts'
 import type {
-  ModelSeg, SpanDetail, Trace, TraceDelta, TracePhase, TraceSpan, TraceStep, TraceTurn,
+  ModelSeg, SpanDetail, Timeline, TimelineDelta, TimelinePhase, TimelineSpan, TimelineStep, TimelineTurn,
 } from './types.ts'
 
 /** The subset of a dsh `SessionEvent` the fold reads. Unknown types pass through. */
@@ -146,34 +146,34 @@ function describeAssistant(message: Rec): string {
 }
 
 /**
- * Fold a session log into a trace.
+ * Fold a session log into a timeline.
  * @param events - committed events in log order.
  * @param options - identity, liveness and the classification rules.
- * @returns the whole trace at the log's cursor.
+ * @returns the whole timeline at the log's cursor.
  */
-export function buildTrace(events: readonly LogEvent[], options: BuildOptions): Trace {
+export function buildTimeline(events: readonly LogEvent[], options: BuildOptions): Timeline {
   const rules = options.rules?.rules ?? []
-  const spans: TraceSpan[] = []
-  const turns: TraceTurn[] = []
-  const steps: TraceStep[] = []
-  const phases: TracePhase[] = []
+  const spans: TimelineSpan[] = []
+  const turns: TimelineTurn[] = []
+  const steps: TimelineStep[] = []
+  const phases: TimelinePhase[] = []
 
-  const callSpans = new Map<string, TraceSpan>()
-  const jobSpans = new Map<string, TraceSpan>()
-  const approvalSpans = new Map<string, TraceSpan>()
-  const commandSpans = new Map<string, TraceSpan>()
+  const callSpans = new Map<string, TimelineSpan>()
+  const jobSpans = new Map<string, TimelineSpan>()
+  const approvalSpans = new Map<string, TimelineSpan>()
+  const commandSpans = new Map<string, TimelineSpan>()
   /** Subagents by child session id; `span` is set while the child is working. */
-  const agents = new Map<string, { label: string; span?: TraceSpan }>()
+  const agents = new Map<string, { label: string; span?: TimelineSpan }>()
   /** Tool calls whose result is logged, by call id; a job that settles later is a background process. */
   const returned = new Set<string>()
   const jobCall = new Map<string, string>()
   /** Open spans whose turn already ended: they keep the end they were frozen at. */
-  const frozen = new Set<TraceSpan>()
+  const frozen = new Set<TimelineSpan>()
 
-  let turn: TraceTurn | undefined
-  let step: TraceStep | undefined
-  let phase: TracePhase | undefined
-  let compaction: TraceSpan | undefined
+  let turn: TimelineTurn | undefined
+  let step: TimelineStep | undefined
+  let phase: TimelinePhase | undefined
+  let compaction: TimelineSpan | undefined
   let awaitingModel = false
   let modelStart = 0
   let modelName = ''
@@ -182,12 +182,12 @@ export function buildTrace(events: readonly LogEvent[], options: BuildOptions): 
   let lastTime = 0
   let nextId = 0
 
-  const open = (span: Omit<TraceSpan, 'id' | 'e' | 'mod' | 'open'>): TraceSpan => {
-    const created: TraceSpan = { ...span, id: nextId++, e: span.s, mod: span.seq, open: true }
+  const open = (span: Omit<TimelineSpan, 'id' | 'e' | 'mod' | 'open'>): TimelineSpan => {
+    const created: TimelineSpan = { ...span, id: nextId++, e: span.s, mod: span.seq, open: true }
     spans.push(created)
     return created
   }
-  const close = (span: TraceSpan, end: number, seq: number): void => {
+  const close = (span: TimelineSpan, end: number, seq: number): void => {
     span.e = Math.max(end, span.s)
     span.mod = seq
     delete span.open
@@ -206,7 +206,7 @@ export function buildTrace(events: readonly LogEvent[], options: BuildOptions): 
     }
     phase = undefined
   }
-  const openPhase = (time: number, src: TracePhase['src'], label: string): void => {
+  const openPhase = (time: number, src: TimelinePhase['src'], label: string): void => {
     closePhase(time)
     phase = { s: time, e: time, turn: turn?.turn ?? 0, src, label }
     phases.push(phase)
@@ -542,11 +542,11 @@ export function buildTrace(events: readonly LogEvent[], options: BuildOptions): 
     span.e = Math.max(span.s, alive ? Math.max(options.now, lastTime) : Math.max(span.e, lastTime))
     if (alive) span.run = true
   }
-  const openStep: TraceStep | undefined = step
+  const openStep: TimelineStep | undefined = step
   if (openStep?.open) openStep.e = Math.max(openStep.s, horizon)
-  const openTurn: TraceTurn | undefined = turn
+  const openTurn: TimelineTurn | undefined = turn
   if (openTurn !== undefined) openTurn.e = Math.max(openTurn.s, horizon)
-  const openPhaseNow: TracePhase | undefined = phase
+  const openPhaseNow: TimelinePhase | undefined = phase
   if (openPhaseNow !== undefined) openPhaseNow.e = Math.max(openPhaseNow.s, horizon)
 
   // A foreground job duplicates its tool call; only processes that outlived their call are kept.
@@ -587,13 +587,13 @@ export function buildTrace(events: readonly LogEvent[], options: BuildOptions): 
 }
 
 /**
- * The part of a trace a client holding `since` is missing.
- * @param trace - the current whole trace.
- * @param since - cursor of the trace the client holds.
+ * The part of a timeline a client holding `since` is missing.
+ * @param timeline - the current whole timeline.
+ * @param since - cursor of the timeline the client holds.
  * @returns changed spans and steps plus every small whole-valued field.
  */
-export function deltaSince(trace: Trace, since: number): TraceDelta {
-  const { spans, steps, ...rest } = trace
+export function deltaSince(timeline: Timeline, since: number): TimelineDelta {
+  const { spans, steps, ...rest } = timeline
   return {
     ...rest,
     spans: spans.filter(span => span.mod > since || span.open === true),
@@ -602,13 +602,13 @@ export function deltaSince(trace: Trace, since: number): TraceDelta {
 }
 
 /**
- * Apply a delta to the trace it was computed against.
- * @param base - the trace the client holds.
+ * Apply a delta to the timeline it was computed against.
+ * @param base - the timeline the client holds.
  * @param delta - changes since `base.cursor`.
- * @returns the trace at `delta.cursor`.
+ * @returns the timeline at `delta.cursor`.
  */
-export function applyDelta(base: Trace, delta: TraceDelta): Trace {
-  const byId = new Map<number, TraceSpan>()
+export function applyDelta(base: Timeline, delta: TimelineDelta): Timeline {
+  const byId = new Map<number, TimelineSpan>()
   for (const span of base.spans) byId.set(span.id, span)
   for (const span of delta.spans) byId.set(span.id, span)
   const spans = [...byId.values()].sort((a, b) => a.id - b.id)

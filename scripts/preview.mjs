@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoLog, DEMO_CATEGORIES } from './demo-log.mjs'
-import { readLog, resolveLog } from './dump-trace.mjs'
+import { readLog, resolveLog } from './dump-timeline.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -78,7 +78,7 @@ const page = `<!doctype html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>dsh-session-trace preview</title>
+<title>dsh-session-timeline preview</title>
 <style>
   html, body { height: 100%; margin: 0; }
   body { background: #0f1420; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
@@ -99,7 +99,7 @@ const page = `<!doctype html>
 <script>
   const params = new URLSearchParams(location.search)
   if (params.get('theme') === 'light') document.body.classList.add('light')
-  if (params.get('view')) localStorage.setItem('dsh-session-trace:prefs', JSON.stringify({ view: params.get('view') }))
+  if (params.get('view')) localStorage.setItem('dsh-session-timeline:prefs', JSON.stringify({ view: params.get('view') }))
   const modules = { react: React }
   const plugins = []
   window.__ModuleLoader__ = { load({ factory }) { plugins.push(factory(id => modules[id])) } }
@@ -126,7 +126,7 @@ const page = `<!doctype html>
     },
   }
   for (const plugin of plugins) plugin.apply(ctx)
-  document.title = view.registration.label() + ' · dsh-session-trace'
+  document.title = view.registration.label() + ' · dsh-session-timeline'
   const View = props => view.component(props)
   ReactDOM.createRoot(document.getElementById('app')).render(React.createElement(View, { sessionId: params.get('session') ?? 'demo' }))
 </script>

@@ -1,10 +1,10 @@
 /**
- * The trace chart: one canvas that draws the time axis, the turn and phase
+ * The timeline chart: one canvas that draws the time axis, the turn and phase
  * rows, the lanes (category tracks or flame bands) and the overview strip,
  * and owns zooming, panning, hovering and selection. No React in here; the
- * view component drives it through `setTrace` / `setOptions`.
+ * view component drives it through `setTimeline` / `setOptions`.
  */
-import type { Trace, TracePhase, TraceSpan, TraceStep, TraceTurn } from '../shared/types.ts'
+import type { Timeline, TimelinePhase, TimelineSpan, TimelineStep, TimelineTurn } from '../shared/types.ts'
 import { fmtClock, fmtDate, fmtDur, fmtDurLong, sameDay } from './format.ts'
 import type { Translate } from './i18n.ts'
 import { flameLanes, laneOrder, trackLanes, type Lane } from './layout.ts'
@@ -32,14 +32,14 @@ export interface ChartOptions {
 }
 
 export type Hit =
-  | { type: 'span'; span: TraceSpan }
-  | { type: 'turn'; turn: TraceTurn }
-  | { type: 'phase'; phase: TracePhase; index: number }
-  | { type: 'step'; step: TraceStep }
+  | { type: 'span'; span: TimelineSpan }
+  | { type: 'turn'; turn: TimelineTurn }
+  | { type: 'phase'; phase: TimelinePhase; index: number }
+  | { type: 'step'; step: TimelineStep }
   | { type: 'gap'; gap: Gap }
 
 export interface ChartCallbacks {
-  onSelect(span: TraceSpan | null): void
+  onSelect(span: TimelineSpan | null): void
   onMatches(count: number): void
 }
 
@@ -102,7 +102,7 @@ function fit(text: string, maxWidth: number, size: number): string {
   return end <= 0 ? '' : text.slice(0, end) + '…'
 }
 
-export class TraceChart {
+export class TimelineChart {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private readonly tip: HTMLDivElement
@@ -111,7 +111,7 @@ export class TraceChart {
   private height = 0
   private frame = 0
 
-  private trace: Trace | null = null
+  private timeline: Timeline | null = null
   private colors: Record<string, string> = {}
   private scale: TimeScale | null = null
   private lanes: LaneBox[] = []
@@ -123,7 +123,7 @@ export class TraceChart {
   private vLeft = 0
   private vRight = 1
   private scrollY = 0
-  /** The window tracks the whole trace until the user zooms or pans. */
+  /** The window tracks the whole timeline until the user zooms or pans. */
   private fitted = true
 
   private hits: HitBox[] = []
@@ -148,7 +148,7 @@ export class TraceChart {
     this.canvas.className = 'dst-canvas'
     this.canvas.tabIndex = 0
     const ctx = this.canvas.getContext('2d')
-    if (ctx === null) throw new Error('dsh-session-trace: 2d canvas is unavailable')
+    if (ctx === null) throw new Error('dsh-session-timeline: 2d canvas is unavailable')
     this.ctx = ctx
     this.tip = document.createElement('div')
     this.tip.className = 'dst-tip'
@@ -186,15 +186,15 @@ export class TraceChart {
     this.invalidate()
   }
 
-  setTrace(trace: Trace | null, colors: Record<string, string>): void {
+  setTimeline(timeline: Timeline | null, colors: Record<string, string>): void {
     const scale = this.scale
     const window = scale === null ? null : [scale.toT(this.vLeft), scale.toT(this.vRight)] as const
-    this.trace = trace
+    this.timeline = timeline
     this.colors = colors
     this.rebuild()
     if (this.fitted || window === null || this.scale === null) this.fitWindow()
     else this.setWindow(this.scale.toV(window[0]), this.scale.toV(window[1]))
-    if (this.selected !== null && trace?.spans.every(span => span.id !== this.selected)) this.selected = null
+    if (this.selected !== null && timeline?.spans.every(span => span.id !== this.selected)) this.selected = null
     this.invalidate()
   }
 
@@ -227,7 +227,7 @@ export class TraceChart {
   }
 
   /** Bring a span into view with some context around it, and scroll its lane in. */
-  focusSpan(span: TraceSpan): void {
+  focusSpan(span: TimelineSpan): void {
     this.focusRange(span.s, span.e)
     const lanesH = this.lanesH
     for (const box of this.lanes) {
@@ -293,22 +293,22 @@ export class TraceChart {
   }
 
   private rebuild(): void {
-    const trace = this.trace
+    const timeline = this.timeline
     this.mini = null
-    if (trace === null) {
+    if (timeline === null) {
       this.scale = null
       this.lanes = []
       this.contentH = 0
       this.matched = null
       return
     }
-    this.scale = makeScale(trace, this.options.fold)
+    this.scale = makeScale(timeline, this.options.fold)
     const laneOptions = { showBackground: this.options.showBackground, hidden: this.options.hidden }
-    const lanes = this.options.view === 'flame' ? flameLanes(trace, laneOptions) : trackLanes(trace, laneOptions)
+    const lanes = this.options.view === 'flame' ? flameLanes(timeline, laneOptions) : trackLanes(timeline, laneOptions)
     let y = 0
     this.lanes = []
     if (this.options.view === 'flame') {
-      const stepLane: Lane = { id: 'steps', spans: [], rows: [], rowCount: 1, count: trace.steps.length }
+      const stepLane: Lane = { id: 'steps', spans: [], rows: [], rowCount: 1, count: timeline.steps.length }
       this.lanes.push({ lane: stepLane, y, h: ROW_H + LANE_PAD * 2 })
       y += ROW_H + LANE_PAD * 2
     }
@@ -326,7 +326,7 @@ export class TraceChart {
       this.callbacks.onMatches(-1)
     } else {
       const matched = new Set<number>()
-      for (const span of trace.spans) {
+      for (const span of timeline.spans) {
         if (span.name.toLowerCase().includes(query) || span.label.toLowerCase().includes(query)) matched.add(span.id)
       }
       this.matched = matched
@@ -625,11 +625,11 @@ export class TraceChart {
   }
 
   private categoryLabel(id: string): string {
-    const custom = this.trace?.categories.find(category => category.id === id)
+    const custom = this.timeline?.categories.find(category => category.id === id)
     return custom?.label ?? this.t(`cat.${id}`)
   }
 
-  private phaseLabel(phase: TracePhase): string {
+  private phaseLabel(phase: TimelinePhase): string {
     if (phase.src === 'wrap') return this.t('phase.wrap')
     return phase.label !== '' ? phase.label : this.t('phase.prompt')
   }
@@ -668,9 +668,9 @@ export class TraceChart {
     ctx.fillStyle = theme.bg
     ctx.fillRect(0, 0, width, height)
     this.hits = []
-    const trace = this.trace
+    const timeline = this.timeline
     const scale = this.scale
-    if (trace === null || scale === null || width < GUTTER + 40) return
+    if (timeline === null || scale === null || width < GUTTER + 40) return
 
     const plotLeft = GUTTER
     const plotRight = GUTTER + this.plotW
@@ -701,7 +701,7 @@ export class TraceChart {
     for (const box of this.lanes) {
       const top = lanesTop + box.y - this.scrollY
       if (top > lanesTop + lanesH || top + box.h < lanesTop) continue
-      if (box.lane.id === 'steps') this.drawSteps(trace, top + LANE_PAD)
+      if (box.lane.id === 'steps') this.drawSteps(timeline, top + LANE_PAD)
       else this.drawLane(box.lane, top + LANE_PAD, plotLeft, plotRight)
     }
     ctx.restore()
@@ -734,8 +734,8 @@ export class TraceChart {
     ctx.beginPath()
     ctx.rect(plotLeft, 0, this.plotW + PAD_R, HEADER_H)
     ctx.clip()
-    this.drawTurns(trace)
-    this.drawPhases(trace)
+    this.drawTurns(timeline)
+    this.drawPhases(timeline)
     ctx.restore()
     ctx.fillStyle = theme.text3
     ctx.font = `11px ${FONT}`
@@ -748,14 +748,14 @@ export class TraceChart {
     ctx.fillStyle = theme.text3
     ctx.font = `11px ${MONO}`
     ctx.textAlign = 'right'
-    ctx.fillText(String(trace.phases.length), GUTTER - 14, PHASE_Y + PHASE_H / 2)
+    ctx.fillText(String(timeline.phases.length), GUTTER - 14, PHASE_Y + PHASE_H / 2)
     ctx.textAlign = 'left'
     ctx.fillStyle = theme.border
     ctx.fillRect(0, HEADER_H - 1, width, 1)
     ctx.fillRect(GUTTER - 1, AXIS_H, 1, this.miniTop - MINI_GAP - AXIS_H)
 
     this.drawCursor(scale, plotLeft, plotRight)
-    this.drawMini(trace, scale)
+    this.drawMini(timeline, scale)
   }
 
   private drawAxis(ticks: { v: number; t: number }[], step: number, plotLeft: number, plotRight: number): void {
@@ -812,12 +812,12 @@ export class TraceChart {
     }
   }
 
-  private drawTurns(trace: Trace): void {
+  private drawTurns(timeline: Timeline): void {
     const { ctx, theme, scale } = this
     if (scale === null) return
     ctx.font = `11px ${FONT}`
     ctx.textBaseline = 'middle'
-    for (const turn of trace.turns) {
+    for (const turn of timeline.turns) {
       const x0 = this.x(scale.toV(turn.s))
       const x1 = this.x(scale.toV(turn.e))
       if (x1 < GUTTER - 2 || x0 > this.width) continue
@@ -838,10 +838,10 @@ export class TraceChart {
     }
   }
 
-  private drawPhases(trace: Trace): void {
+  private drawPhases(timeline: Timeline): void {
     const { ctx, scale } = this
     if (scale === null) return
-    trace.phases.forEach((phase, index) => {
+    timeline.phases.forEach((phase, index) => {
       const x0 = this.x(scale.toV(phase.s))
       const x1 = this.x(scale.toV(phase.e))
       if (x1 < GUTTER - 2 || x0 > this.width) return
@@ -869,12 +869,12 @@ export class TraceChart {
     })
   }
 
-  private drawSteps(trace: Trace, top: number): void {
+  private drawSteps(timeline: Timeline, top: number): void {
     const { ctx, theme, scale } = this
     if (scale === null) return
     ctx.font = `10.5px ${MONO}`
     ctx.textBaseline = 'middle'
-    for (const step of trace.steps) {
+    for (const step of timeline.steps) {
       const x0 = this.x(scale.toV(step.s))
       const x1 = this.x(scale.toV(step.e))
       if (x1 < GUTTER - 2 || x0 > this.width) continue
@@ -895,7 +895,7 @@ export class TraceChart {
     if (scale === null) return
     const matched = this.matched
     for (let i = 0; i < lane.spans.length; i++) {
-      const span = lane.spans[i] as TraceSpan
+      const span = lane.spans[i] as TimelineSpan
       const x0 = this.x(scale.toV(span.s))
       const x1 = this.x(scale.toV(span.e))
       if (x1 < plotLeft - 2 || x0 > plotRight + PAD_R) continue
@@ -1016,8 +1016,8 @@ export class TraceChart {
     ctx.textAlign = 'left'
   }
 
-  /** Overview strip: how busy each lane was across the whole trace, with the visible window on top. */
-  private drawMini(trace: Trace, scale: TimeScale): void {
+  /** Overview strip: how busy each lane was across the whole timeline, with the visible window on top. */
+  private drawMini(timeline: Timeline, scale: TimeScale): void {
     const { ctx, theme } = this
     const top = this.miniTop
     const left = GUTTER
@@ -1027,7 +1027,7 @@ export class TraceChart {
     ctx.fill()
 
     const n = Math.max(1, Math.floor(w / 3))
-    if (this.mini === null || this.mini.n !== n) this.mini = this.miniBuckets(trace, scale, n)
+    if (this.mini === null || this.mini.n !== n) this.mini = this.miniBuckets(timeline, scale, n)
     const { buckets, cats, max } = this.mini
     const k = cats.length
     if (max > 0) {
@@ -1059,13 +1059,13 @@ export class TraceChart {
     ctx.stroke()
   }
 
-  private miniBuckets(trace: Trace, scale: TimeScale, n: number): { buckets: Float32Array; cats: string[]; max: number; n: number } {
-    const cats = laneOrder(trace).filter(id => !this.options.hidden.has(id))
+  private miniBuckets(timeline: Timeline, scale: TimeScale, n: number): { buckets: Float32Array; cats: string[]; max: number; n: number } {
+    const cats = laneOrder(timeline).filter(id => !this.options.hidden.has(id))
     const index = new Map(cats.map((id, i) => [id, i]))
     const k = cats.length
     const buckets = new Float32Array(n * Math.max(1, k))
     const size = scale.length / n
-    for (const span of trace.spans) {
+    for (const span of timeline.spans) {
       const c = index.get(span.cat)
       if (c === undefined) continue
       if (span.kind === 'job' && !this.options.showBackground) continue

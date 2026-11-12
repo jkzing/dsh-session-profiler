@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Session Trace (dsh-session-trace)",
-    "description": "Turns a session into a trace: swim-lane call tracks, a flame graph and timing statistics that show whether time went to the model, to tools or to waiting."
+    "title": "Session Timeline (dsh-session-timeline)",
+    "description": "Turns a session into a timeline: swim-lane call tracks, a flame graph and timing statistics that show whether time went to the model, to tools or to waiting."
   }
 }

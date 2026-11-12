@@ -1,5 +1,5 @@
 /**
- * Browser half: registers the trace tab into the conversation view ring.
+ * Browser half: registers the timeline tab into the conversation view ring.
  *
  * The bundle is a closure factory the dsh shell loads into its module table;
  * `react` comes from the shell through the injected `require`, everything
@@ -7,7 +7,7 @@
  */
 import { createElement } from 'react'
 import { DICTS, NS, type Translate } from './i18n.ts'
-import { TraceView } from './TraceView.tsx'
+import { TimelineView } from './TimelineView.tsx'
 import css from './styles.css'
 
 interface LocaleService {
@@ -36,8 +36,8 @@ interface ClientContext {
 }
 
 const VIEW_SLOT = 'conversation.view'
-const VIEW_ID = 'session-trace'
-const STYLE_ID = 'dsh-session-trace-style'
+const VIEW_ID = 'session-timeline'
+const STYLE_ID = 'dsh-session-timeline-style'
 
 /** True when a previous load of this bundle already holds the tab (hot reload). */
 function seated(ctx: ClientContext): boolean {
@@ -66,7 +66,7 @@ function apply(ctx: ClientContext): void {
   // Order 15 sits the tab between Trajectory (10) and plugin tabs registered at 20.
   ctx.slots.inject(VIEW_SLOT, () => ctx.slots.register(
     { name: VIEW_SLOT, id: VIEW_ID, order: 15, locale: NS, label: () => t('tab') },
-    props => createElement(TraceView, { sessionId: props.sessionId, t }),
+    props => createElement(TimelineView, { sessionId: props.sessionId, t }),
   ))
 }
 

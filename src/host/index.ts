@@ -1,20 +1,20 @@
 /**
  * Host half: two POST routes that fold a session's committed events into a
- * trace. The plugin holds no subscriptions and writes nothing to the session
+ * timeline. The plugin holds no subscriptions and writes nothing to the session
  * log; every read goes through `sessionQuery.observeSession`, which serves
  * attached sessions from memory and cold ones from persistence.
  *
  * The host faces are typed locally and probed defensively so the plugin loads
  * across dsh releases without compiling against their packages.
  */
-import { buildTrace, deltaSince, spanDetail, type LogEvent } from '../shared/build.ts'
+import { buildTimeline, deltaSince, spanDetail, type LogEvent } from '../shared/build.ts'
 import { compileRules, type RuleSet } from '../shared/classify.ts'
 import {
-  DETAIL_ROUTE, TRACE_ROUTE,
-  type SpanDetailResponse, type Trace, type TraceResponse,
+  DETAIL_ROUTE, TIMELINE_ROUTE,
+  type SpanDetailResponse, type Timeline, type TimelineResponse,
 } from '../shared/types.ts'
 
-export const name = 'dsh-session-trace'
+export const name = 'dsh-session-timeline'
 
 export const inject = ['connection']
 
@@ -61,15 +61,15 @@ interface CacheEntry {
   cursor: number
   live: boolean
   revision: unknown
-  trace: Trace
+  timeline: Timeline
 }
 
-/** Traces kept between polls; the fold is cheap, so this only spares repeat work on a hot tab. */
+/** Timelines kept between polls; the fold is cheap, so this only spares repeat work on a hot tab. */
 const CACHE_MAX = 6
-/** A running trace's open spans end at the build clock; rebuild at most this often while nothing was logged. */
+/** A running timeline's open spans end at the build clock; rebuild at most this often while nothing was logged. */
 const RUNNING_REFRESH_MS = 1000
 
-function reply(value: TraceResponse | SpanDetailResponse): Response {
+function reply(value: TimelineResponse | SpanDetailResponse): Response {
   return Response.json(value, { headers: { 'cache-control': 'no-store' } })
 }
 
@@ -130,8 +130,8 @@ export function apply(ctx: HostContext, config: Config = {}): void {
     }
   }
 
-  /** The current trace, or null when the session does not exist. */
-  const traceOf = async (sessionId: string): Promise<Trace | null> => {
+  /** The current timeline, or null when the session does not exist. */
+  const timelineOf = async (sessionId: string): Promise<Timeline | null> => {
     const observation = await observe(sessionId)
     if (observation === null) return null
     try {
@@ -140,26 +140,26 @@ export function apply(ctx: HostContext, config: Config = {}): void {
       const now = Date.now()
       const hit = cache.get(sessionId)
       if (hit !== undefined && hit.cursor === cursor && hit.live === live && hit.revision === observation.revision
-        && !(hit.trace.running && now - hit.trace.now >= RUNNING_REFRESH_MS)) {
-        return hit.trace
+        && !(hit.timeline.running && now - hit.timeline.now >= RUNNING_REFRESH_MS)) {
+        return hit.timeline
       }
       const events = observation.events
       if (!Array.isArray(events)) return null
-      const trace = buildTrace(events as readonly LogEvent[], {
+      const timeline = buildTimeline(events as readonly LogEvent[], {
         sessionId,
         live,
         now,
         rules,
         inherited: typeof observation.inheritedEventCount === 'number' ? observation.inheritedEventCount : 0,
       })
-      remember(sessionId, { cursor, live, revision: observation.revision, trace })
-      return trace
+      remember(sessionId, { cursor, live, revision: observation.revision, timeline })
+      return timeline
     } finally {
       release(observation)
     }
   }
 
-  const traceRoute = async (request: Request): Promise<Response> => {
+  const timelineRoute = async (request: Request): Promise<Response> => {
     const body = await bodyOf(request)
     const sessionId = body?.sessionId
     if (typeof sessionId !== 'string' || sessionId === '') return failure(`${name}/bad-request`, 'missing sessionId')
@@ -172,13 +172,13 @@ export function apply(ctx: HostContext, config: Config = {}): void {
           return reply({ ok: true, mode: 'unchanged', live: false, running: false, now: Date.now() })
         }
       }
-      const trace = await traceOf(sessionId)
-      if (trace === null) return reply({ ok: true, mode: 'missing' })
-      if (since === undefined || since > trace.cursor) return reply({ ok: true, mode: 'full', trace })
-      if (since === trace.cursor && !trace.running) {
-        return reply({ ok: true, mode: 'unchanged', live: trace.live, running: false, now: trace.now })
+      const timeline = await timelineOf(sessionId)
+      if (timeline === null) return reply({ ok: true, mode: 'missing' })
+      if (since === undefined || since > timeline.cursor) return reply({ ok: true, mode: 'full', timeline })
+      if (since === timeline.cursor && !timeline.running) {
+        return reply({ ok: true, mode: 'unchanged', live: timeline.live, running: false, now: timeline.now })
       }
-      return reply({ ok: true, mode: 'delta', delta: deltaSince(trace, since) })
+      return reply({ ok: true, mode: 'delta', delta: deltaSince(timeline, since) })
     } catch (error) {
       return failure(`${name}/internal`, error instanceof Error ? error.message : String(error))
     }
@@ -210,13 +210,13 @@ export function apply(ctx: HostContext, config: Config = {}): void {
     ? connection.fetch.register.bind(connection.fetch)
     : undefined
   if (register === undefined) {
-    warn('the connection service exposes no fetch routes; the trace view will have no data')
+    warn('the connection service exposes no fetch routes; the timeline view will have no data')
     return
   }
   const mount = (path: string, fetch: FetchRoute['fetch']): void => {
     ctx.effect(() => register({ path: `/${path}`, methods: ['POST'], requestBody: 'buffered', fetch }), `${name}: ${path}`)
   }
-  mount(TRACE_ROUTE, traceRoute)
+  mount(TIMELINE_ROUTE, timelineRoute)
   mount(DETAIL_ROUTE, detailRoute)
-  ctx.effect(() => () => { cache.clear() }, `${name}: trace cache`)
+  ctx.effect(() => () => { cache.clear() }, `${name}: timeline cache`)
 }

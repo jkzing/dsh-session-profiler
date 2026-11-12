@@ -1,11 +1,11 @@
 /**
- * Timing statistics over a trace. Pure; runs wherever the trace is.
+ * Timing statistics over a timeline. Pure; runs wherever the timeline is.
  *
  * The headline split partitions the time inside turns, so the parts add up:
  * waiting on the user wins over tool execution, which wins over model time,
  * and whatever is left is harness overhead between events.
  */
-import type { Trace, TraceSpan } from './types.ts'
+import type { Timeline, TimelineSpan } from './types.ts'
 
 export interface CategoryStat {
   cat: string
@@ -29,7 +29,7 @@ export interface ToolStat {
   err: number
 }
 
-export interface TraceStats {
+export interface TimelineStats {
   /** First activity to last activity. */
   wall: number
   /** Time inside turns. */
@@ -74,11 +74,11 @@ export function unionLength(intervals: Interval[]): number {
   return total + (end - start)
 }
 
-function isWait(span: TraceSpan): boolean {
+function isWait(span: TimelineSpan): boolean {
   return span.cat === 'wait'
 }
 
-export function summarize(trace: Trace): TraceStats {
+export function summarize(timeline: Timeline): TimelineStats {
   const cats = new Map<string, CategoryStat & { spans: Interval[] }>()
   const tools = new Map<string, ToolStat>()
   const wait: Interval[] = []
@@ -92,7 +92,7 @@ export function summarize(trace: Trace): TraceStats {
   let toolCalls = 0
   let errors = 0
 
-  for (const span of trace.spans) {
+  for (const span of timeline.spans) {
     let cat = cats.get(span.cat)
     if (cat === undefined) {
       cat = { cat: span.cat, n: 0, sum: 0, busy: 0, max: 0, err: 0, bg: 0, spans: [] }
@@ -146,11 +146,11 @@ export function summarize(trace: Trace): TraceStats {
   }
 
   let active = 0
-  for (const turn of trace.turns) active += turn.e - turn.s
+  for (const turn of timeline.turns) active += turn.e - turn.s
   const waitOnly = unionLength(wait)
   const toolAndWait = unionLength([...wait, ...tool])
   const all = unionLength([...wait, ...tool, ...model])
-  const wall = trace.end - trace.start
+  const wall = timeline.end - timeline.start
 
   return {
     wall,
