@@ -29,7 +29,7 @@
 
 ```bash
 git clone https://github.com/jkzing/dsh-session-timeline.git && cd dsh-session-timeline
-npm install          # 会顺带构建出 lib/
+pnpm install         # 会顺带构建出 lib/
 dsh plugin --profile web add .
 ```
 
@@ -82,21 +82,21 @@ src/client   浏览器端：标签页、Canvas 图表、统计表、详情面板
 ## 开发
 
 ```bash
-npm run check        # 类型检查 + 测试 + 构建
-npm run watch        # 改动即重新构建
-npm run preview      # 不依赖 dsh 的预览页：http://127.0.0.1:4173/
+pnpm check           # 类型检查 + 测试 + 构建
+pnpm watch           # 改动即重新构建
+pnpm preview         # 不依赖 dsh 的预览页：http://127.0.0.1:4173/
 ```
 
 预览页用一份合成的会话（`scripts/demo-log.mjs`）驱动真实的主机端和浏览器端代码：
 
 - `?session=demo` 一份三个多小时的完整会话；`?session=live` 同一份日志按真实时间回放，用来看轮询
 - `?view=flame|stats`、`?theme=light`、`?lang=en`
-- `npm run preview -- ~/.dsh/sessions/<工作区>/<会话>` 加载一份真实会话（需要 `zstd` 命令行）
+- `pnpm preview ~/.dsh/sessions/<工作区>/<会话>` 加载一份真实会话（需要 `zstd` 命令行）
 
 离线把一份会话折叠成 JSON：
 
 ```bash
-npm run timeline -- ~/.dsh/sessions/<工作区>/<会话> --summary
+pnpm timeline ~/.dsh/sessions/<工作区>/<会话> --summary
 ```
 
 想在真实的 dsh 里试而不动自己的 profile，可以用一个临时的 `DSH_HOME`：
