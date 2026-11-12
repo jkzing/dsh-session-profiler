@@ -1,7 +1,7 @@
 /**
- * The timeline chart: one canvas that draws the time axis, the turn and phase
- * rows, the lanes (category tracks or flame bands) and the overview strip,
- * and owns zooming, panning, hovering and selection. No React in here; the
+ * The timeline chart: one canvas that draws the overview strip, the time axis,
+ * the turn and phase rows and the lanes (category tracks or flame bands), and
+ * owns zooming, panning, hovering and selection. No React in here; the
  * view component drives it through `setTimeline` / `setOptions`.
  */
 import type { Timeline, TimelinePhase, TimelineSpan, TimelineStep, TimelineTurn } from '../shared/types.ts'
@@ -58,16 +58,27 @@ interface LaneBox {
   h: number
 }
 
+type MiniZone = 'left' | 'right' | 'inside' | 'outside'
+
 const GUTTER = 172
 const PAD_R = 12
+/** The overview strip sits on top: a ruler row for the whole timeline, then the activity bars. */
+const MINI_TOP = 10
+const MINI_RULER_H = 14
+const MINI_H = 54
+const MINI_BOTTOM = MINI_TOP + MINI_H
+const HANDLE_W = 9
+const HANDLE_H = 18
+/** How far apart the handles stay from the middle of a window too narrow to hold them. */
+const HANDLE_APART = HANDLE_W / 2 + 4
+const AXIS_Y = MINI_BOTTOM + 8
 const AXIS_H = 26
-const TURN_Y = AXIS_H + 4
+const AXIS_BOTTOM = AXIS_Y + AXIS_H
+const TURN_Y = AXIS_BOTTOM + 4
 const TURN_H = 22
 const PHASE_Y = TURN_Y + TURN_H + 5
 const PHASE_H = 40
 const HEADER_H = PHASE_Y + PHASE_H + 8
-const MINI_H = 44
-const MINI_GAP = 8
 const ROW_H = 16
 const ROW_GAP = 3
 const LANE_PAD = 8
@@ -131,7 +142,13 @@ export class TimelineChart {
   private pointerX = -1
   private pointerY = -1
   private selected: number | null = null
-  private drag: { mode: 'pan' | 'mini'; x: number; y: number; vLeft: number; scrollY: number; moved: boolean; grab: number } | null = null
+  /** What the pointer is over on the overview strip, if it is there at all. */
+  private miniHover: MiniZone | null = null
+  /**
+   * `mini` moves the window along the overview, `left` / `right` drag one of
+   * its edges. `grab` keeps the pointer's offset from what it took hold of.
+   */
+  private drag: { mode: 'pan' | 'mini' | 'left' | 'right'; x: number; y: number; vLeft: number; scrollY: number; moved: boolean; grab: number } | null = null
   private readonly patterns = new Map<string, CanvasPattern | null>()
 
   private readonly host: HTMLElement
@@ -260,11 +277,12 @@ export class TimelineChart {
   }
 
   private get lanesH(): number {
-    return Math.max(0, this.height - HEADER_H - MINI_H - MINI_GAP - 6)
+    return Math.max(0, this.height - HEADER_H)
   }
 
-  private get miniTop(): number {
-    return this.height - MINI_H - 6
+  /** The narrowest window, in virtual ms: two pixels per millisecond at most. */
+  private get minSpan(): number {
+    return Math.max(this.plotW * 0.5, 20)
   }
 
   private x(v: number): number {
@@ -343,8 +361,7 @@ export class TimelineChart {
 
   private setWindow(left: number, right: number): void {
     const length = Math.max(this.scale?.length ?? 1, 1)
-    const minSpan = Math.max(this.plotW * 0.5, 20)
-    let span = Math.min(Math.max(right - left, minSpan), length)
+    let span = Math.min(Math.max(right - left, this.minSpan), length)
     if (span >= length) {
       this.vLeft = 0
       this.vRight = length
@@ -358,11 +375,26 @@ export class TimelineChart {
     this.vRight = l + span
   }
 
+  /** Move one edge of the window and leave the other where it is. */
+  private resizeWindow(edge: 'left' | 'right', v: number): void {
+    const length = Math.max(this.scale?.length ?? 1, 1)
+    const minSpan = Math.min(this.minSpan, length)
+    if (edge === 'left') this.vLeft = Math.max(0, Math.min(v, this.vRight - minSpan))
+    else this.vRight = Math.min(length, Math.max(v, this.vLeft + minSpan))
+    this.fitted = this.vLeft <= 0 && this.vRight >= length
+  }
+
   private zoomAt(x: number, factor: number): void {
+    this.zoomAround(this.vAt(Math.max(GUTTER, Math.min(x, GUTTER + this.plotW))), factor)
+  }
+
+  private zoomAround(v: number, factor: number): void {
     if (this.scale === null) return
-    const anchor = this.vAt(Math.max(GUTTER, Math.min(x, GUTTER + this.plotW)))
-    const span = (this.vRight - this.vLeft) / factor
-    const ratio = (anchor - this.vLeft) / (this.vRight - this.vLeft)
+    const width = this.vRight - this.vLeft
+    // From the overview the pointer can be outside the window; zoom about its middle then.
+    const anchor = v < this.vLeft || v > this.vRight ? this.vLeft + width / 2 : v
+    const span = width / factor
+    const ratio = (anchor - this.vLeft) / width
     this.fitted = false
     this.setWindow(anchor - span * ratio, anchor + span * (1 - ratio))
     if (this.vLeft <= 0 && this.vRight >= this.scale.length) this.fitted = true
@@ -393,23 +425,26 @@ export class TimelineChart {
     event.preventDefault()
     const { x, y } = this.local(event)
     // Over the lane labels the wheel scrolls the lanes; over the plot it zooms time.
-    if (x < GUTTER && y > this.lanesTop && y < this.miniTop && this.contentH > this.lanesH) {
+    if (x < GUTTER && y > this.lanesTop && this.contentH > this.lanesH) {
       this.scrollY += event.deltaY * (event.deltaMode === 1 ? 32 : 1)
       this.clampScroll()
       this.invalidate()
       return
     }
+    // On the overview strip a pixel is a slice of the whole timeline, not of the window.
+    const overMini = y < AXIS_Y
     const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY)
     if (horizontal || event.shiftKey) {
       const delta = horizontal ? event.deltaX : event.deltaY
-      const shift = (delta / this.plotW) * (this.vRight - this.vLeft)
+      const shift = (delta / this.plotW) * (overMini ? this.scale.length : this.vRight - this.vLeft)
       this.fitted = false
       this.setWindow(this.vLeft + shift, this.vRight + shift)
       this.invalidate()
       return
     }
-    const unit = event.deltaMode === 1 ? 32 : 1
-    this.zoomAt(x, Math.exp(-event.deltaY * unit * 0.0022))
+    const factor = Math.exp(-event.deltaY * (event.deltaMode === 1 ? 32 : 1) * 0.0022)
+    if (overMini) this.zoomAround(this.miniV(x), factor)
+    else this.zoomAt(x, factor)
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
@@ -417,17 +452,25 @@ export class TimelineChart {
     const { x, y } = this.local(event)
     this.canvas.setPointerCapture(event.pointerId)
     this.hideTip()
-    if (y >= this.miniTop) {
-      const v = this.miniV(x)
-      const inside = v >= this.vLeft && v <= this.vRight
+    const zone = this.miniZone(x, y)
+    if (zone === 'left' || zone === 'right') {
+      const { x0, x1 } = this.miniWindow()
+      this.drag = { mode: zone, x, y, vLeft: this.vLeft, scrollY: this.scrollY, moved: false, grab: (zone === 'left' ? x0 : x1) - x }
+      this.invalidate()
+      return
+    }
+    if (zone !== null) {
+      const inside = zone === 'inside'
       const span = this.vRight - this.vLeft
+      const v = this.miniV(x)
       const grab = inside ? v - this.vLeft : span / 2
       this.drag = { mode: 'mini', x, y, vLeft: this.vLeft, scrollY: this.scrollY, moved: !inside, grab }
       if (!inside) {
         this.fitted = false
         this.setWindow(v - grab, v - grab + span)
-        this.invalidate()
       }
+      this.updateCursor(x, y)
+      this.invalidate()
       return
     }
     this.drag = { mode: 'pan', x, y, vLeft: this.vLeft, scrollY: this.scrollY, moved: false, grab: 0 }
@@ -444,7 +487,9 @@ export class TimelineChart {
       if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
       drag.moved = true
       const span = this.vRight - this.vLeft
-      if (drag.mode === 'mini') {
+      if (drag.mode === 'left' || drag.mode === 'right') {
+        this.resizeWindow(drag.mode, this.miniV(x + drag.grab))
+      } else if (drag.mode === 'mini') {
         const v = this.miniV(x)
         this.fitted = false
         this.setWindow(v - drag.grab, v - drag.grab + span)
@@ -461,23 +506,33 @@ export class TimelineChart {
       this.invalidate()
       return
     }
-    const hit = this.hitAt(x, y)
-    if (hit !== this.hover) {
-      this.hover = hit
-      this.canvas.style.cursor = hit === null ? (y >= this.miniTop ? 'ew-resize' : 'default') : 'pointer'
-    }
+    const hit = this.updateCursor(x, y)
     this.showTip(hit, x, y)
     this.invalidate()
+  }
+
+  /** Refresh what the pointer is over, and the cursor that says what a press would do there. */
+  private updateCursor(x: number, y: number): Hit | null {
+    const zone = this.miniZone(x, y)
+    const hit = zone === null ? this.hitAt(x, y) : null
+    this.miniHover = zone
+    this.hover = hit
+    let cursor = hit === null ? 'default' : 'pointer'
+    if (zone === 'left' || zone === 'right') cursor = 'ew-resize'
+    else if (zone === 'outside') cursor = 'pointer'
+    else if (zone === 'inside' && !this.fitted) cursor = this.drag === null ? 'grab' : 'grabbing'
+    this.canvas.style.cursor = cursor
+    return hit
   }
 
   private readonly onPointerUp = (event: PointerEvent): void => {
     const drag = this.drag
     this.drag = null
-    this.canvas.style.cursor = 'default'
     if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId)
-    if (drag === null || drag.moved || drag.mode !== 'pan') return
     const { x, y } = this.local(event)
-    const hit = this.hitAt(x, y)
+    const hit = this.updateCursor(x, y)
+    this.invalidate()
+    if (drag === null || drag.moved || drag.mode !== 'pan') return
     if (hit?.type === 'span') {
       this.selected = hit.span.id
       this.callbacks.onSelect(hit.span)
@@ -493,6 +548,7 @@ export class TimelineChart {
     this.pointerX = -1
     this.pointerY = -1
     this.hover = null
+    this.miniHover = null
     this.hideTip()
     this.invalidate()
   }
@@ -543,7 +599,7 @@ export class TimelineChart {
   }
 
   private hitAt(x: number, y: number): Hit | null {
-    if (x < GUTTER || y >= this.miniTop - MINI_GAP) return null
+    if (x < GUTTER || y < AXIS_Y) return null
     for (let i = this.hits.length - 1; i >= 0; i--) {
       const box = this.hits[i] as HitBox
       if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) return box.hit
@@ -554,6 +610,32 @@ export class TimelineChart {
   private miniV(x: number): number {
     const length = this.scale?.length ?? 1
     return Math.max(0, Math.min(1, (x - GUTTER) / this.plotW)) * length
+  }
+
+  /**
+   * The window on the overview strip: its edges, and the centre of each
+   * handle. A handle sits on its edge until the window gets too narrow to
+   * hold both; from there they stay put either side of it, so there is always
+   * a handle to take and a middle to move the window by.
+   */
+  private miniWindow(): { x0: number; x1: number; left: number; right: number } {
+    const length = Math.max(this.scale?.length ?? 1, 1)
+    const x0 = GUTTER + (this.vLeft / length) * this.plotW
+    const x1 = GUTTER + (this.vRight / length) * this.plotW
+    const mid = (x0 + x1) / 2
+    return { x0, x1, left: Math.min(x0, mid - HANDLE_APART), right: Math.max(x1, mid + HANDLE_APART) }
+  }
+
+  private miniZone(x: number, y: number): MiniZone | null {
+    if (this.scale === null || y < MINI_TOP - 6 || y > MINI_BOTTOM + 3) return null
+    if (x < GUTTER - HANDLE_W - 3 || x > GUTTER + this.plotW + HANDLE_W + 3) return null
+    const { left, right } = this.miniWindow()
+    // A little more reach outwards than inwards, where the window itself is the target.
+    const outer = HANDLE_W / 2 + 4
+    const inner = HANDLE_W / 2 + 1
+    if (x >= left - outer && x <= left + inner) return 'left'
+    if (x >= right - inner && x <= right + outer) return 'right'
+    return x > left && x < right ? 'inside' : 'outside'
   }
 
   // ── tooltip ─────────────────────────────────────────────────────────────
@@ -725,14 +807,14 @@ export class TimelineChart {
       ctx.fill()
     }
 
-    // Header: axis, turns, phases.
+    // Header: overview, axis, turns, phases.
     ctx.fillStyle = theme.bg
     ctx.fillRect(0, 0, width, HEADER_H)
-    this.drawGaps(scale, AXIS_H, HEADER_H - AXIS_H, false)
+    this.drawGaps(scale, AXIS_BOTTOM, HEADER_H - AXIS_BOTTOM, false)
     this.drawAxis(ticks, step, plotLeft, plotRight)
     ctx.save()
     ctx.beginPath()
-    ctx.rect(plotLeft, 0, this.plotW + PAD_R, HEADER_H)
+    ctx.rect(plotLeft, AXIS_Y, this.plotW + PAD_R, HEADER_H - AXIS_Y)
     ctx.clip()
     this.drawTurns(timeline)
     this.drawPhases(timeline)
@@ -752,7 +834,8 @@ export class TimelineChart {
     ctx.textAlign = 'left'
     ctx.fillStyle = theme.border
     ctx.fillRect(0, HEADER_H - 1, width, 1)
-    ctx.fillRect(GUTTER - 1, AXIS_H, 1, this.miniTop - MINI_GAP - AXIS_H)
+    ctx.fillRect(0, AXIS_Y - 1, width, 1)
+    ctx.fillRect(GUTTER - 1, AXIS_BOTTOM, 1, height - AXIS_BOTTOM)
 
     this.drawCursor(scale, plotLeft, plotRight)
     this.drawMini(timeline, scale)
@@ -769,7 +852,7 @@ export class TimelineChart {
       const x = this.x(tick.v)
       if (x < plotLeft - 1 || x > plotRight + 1) continue
       ctx.fillStyle = withAlphaOf(theme.text3, 0.5)
-      ctx.fillRect(Math.round(x), AXIS_H - 5, 1, 5)
+      ctx.fillRect(Math.round(x), AXIS_BOTTOM - 5, 1, 5)
       const dated = previous === null ? !sameDay(tick.t, Date.now()) && ticks[0] === tick : !sameDay(previous, tick.t)
       const label = dated ? `${fmtDate(tick.t)} ${fmtClock(tick.t, step)}` : fmtClock(tick.t, step)
       previous = tick.t
@@ -778,7 +861,7 @@ export class TimelineChart {
       if (left < lastRight) continue
       lastRight = left + w
       ctx.fillStyle = theme.text2
-      ctx.fillText(label, left + w / 2, AXIS_H / 2 - 1)
+      ctx.fillText(label, left + w / 2, AXIS_Y + AXIS_H / 2 - 1)
     }
     ctx.textAlign = 'left'
   }
@@ -998,40 +1081,67 @@ export class TimelineChart {
   private drawCursor(scale: TimeScale, plotLeft: number, plotRight: number): void {
     const { ctx, theme } = this
     const x = this.pointerX
-    if (this.drag !== null || x < plotLeft || x > plotRight || this.pointerY < 0 || this.pointerY >= this.miniTop - MINI_GAP) return
+    if (this.drag !== null || x < plotLeft || x > plotRight || this.pointerY < AXIS_Y) return
     ctx.fillStyle = withAlphaOf(theme.text2, 0.45)
-    ctx.fillRect(Math.round(x), AXIS_H, 1, this.miniTop - MINI_GAP - AXIS_H)
+    ctx.fillRect(Math.round(x), AXIS_BOTTOM, 1, this.height - AXIS_BOTTOM)
     const ppv = this.plotW / (this.vRight - this.vLeft)
     const label = fmtClock(scale.toT(this.vAt(x)), ppv > 0.05 ? 1 : 1000)
     const w = textWidth(label, 11) + 12
     const left = Math.max(plotLeft, Math.min(x - w / 2, plotRight - w))
     ctx.fillStyle = theme.accent
-    this.roundRect(left, 4, w, AXIS_H - 8, 4)
+    this.roundRect(left, AXIS_Y + 4, w, AXIS_H - 8, 4)
     ctx.fill()
     ctx.fillStyle = '#ffffff'
     ctx.font = `11px ${MONO}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(label, left + w / 2, AXIS_H / 2)
+    ctx.fillText(label, left + w / 2, AXIS_Y + AXIS_H / 2)
     ctx.textAlign = 'left'
   }
 
-  /** Overview strip: how busy each lane was across the whole timeline, with the visible window on top. */
+  /**
+   * Overview strip: how busy each lane was across the whole timeline, under a
+   * ruler of its own, with the visible window and its two handles on top.
+   */
   private drawMini(timeline: Timeline, scale: TimeScale): void {
     const { ctx, theme } = this
-    const top = this.miniTop
+    const top = MINI_TOP
     const left = GUTTER
     const w = this.plotW
+    ctx.fillStyle = theme.text3
+    ctx.font = `11px ${FONT}`
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'left'
+    ctx.fillText(this.t('row.overview'), 16, top + MINI_H / 2)
     ctx.fillStyle = theme.raised
     this.roundRect(left, top, w, MINI_H, 4)
     ctx.fill()
+
+    // Ruler: the whole timeline, however far the chart below is zoomed in.
+    const step = tickStep(w / scale.length, 96)
+    ctx.font = `10px ${MONO}`
+    let previous: number | null = null
+    let lastRight = -Infinity
+    for (const tick of ticksIn(scale, 0, scale.length, step)) {
+      const x = Math.round(left + (tick.v / scale.length) * w)
+      if (x < left + 2 || x > left + w - 2) continue
+      ctx.fillStyle = withAlphaOf(theme.text3, 0.22)
+      ctx.fillRect(x, top, 1, MINI_H)
+      const label = previous !== null && !sameDay(previous, tick.t) ? `${fmtDate(tick.t)} ${fmtClock(tick.t, step)}` : fmtClock(tick.t, step)
+      const right = x + 5 + textWidth(label, 10)
+      if (x < lastRight + 8 || right > left + w - 4) continue
+      previous = tick.t
+      lastRight = right
+      ctx.fillStyle = theme.text3
+      ctx.fillText(label, x + 5, top + MINI_RULER_H / 2 + 1.5)
+    }
 
     const n = Math.max(1, Math.floor(w / 3))
     if (this.mini === null || this.mini.n !== n) this.mini = this.miniBuckets(timeline, scale, n)
     const { buckets, cats, max } = this.mini
     const k = cats.length
     if (max > 0) {
-      const usable = MINI_H - 6
+      const usable = MINI_H - MINI_RULER_H - 5
       for (let b = 0; b < n; b++) {
         let y = top + MINI_H - 2
         for (let c = 0; c < k; c++) {
@@ -1046,17 +1156,42 @@ export class TimelineChart {
     }
     ctx.fillStyle = withAlphaOf(theme.text3, 0.5)
     for (const gap of scale.gaps) {
-      ctx.fillRect(Math.round(left + ((gap.v0 + gap.v1) / 2 / scale.length) * w), top + 3, 1, MINI_H - 6)
+      ctx.fillRect(Math.round(left + ((gap.v0 + gap.v1) / 2 / scale.length) * w), top + MINI_RULER_H + 1, 1, MINI_H - MINI_RULER_H - 3)
     }
-    const x0 = left + (this.vLeft / scale.length) * w
-    const x1 = left + (this.vRight / scale.length) * w
+    const { x0, x1, left: handleL, right: handleR } = this.miniWindow()
     ctx.fillStyle = withAlphaOf(theme.bg, 0.55)
     ctx.fillRect(left, top, Math.max(0, x0 - left), MINI_H)
     ctx.fillRect(x1, top, Math.max(0, left + w - x1), MINI_H)
     ctx.strokeStyle = theme.accent
     ctx.lineWidth = 1.5
-    this.roundRect(x0 + 0.75, top + 0.75, Math.max(3, x1 - x0 - 1.5), MINI_H - 1.5, 4)
+    const boxW = Math.max(3, x1 - x0 - 1.5)
+    this.roundRect(Math.min(x0 + 0.75, (x0 + x1 - boxW) / 2), top + 0.75, boxW, MINI_H - 1.5, 4)
     ctx.stroke()
+    const held = this.drag?.mode
+    this.drawHandle(handleL, held === 'left' || (held === undefined && this.miniHover === 'left'))
+    this.drawHandle(handleR, held === 'right' || (held === undefined && this.miniHover === 'right'))
+  }
+
+  /** A grip on one edge of the overview window, lit while the pointer is on it. */
+  private drawHandle(centre: number, active: boolean): void {
+    const { ctx, theme } = this
+    const x = Math.round(centre - HANDLE_W / 2)
+    const y = MINI_TOP - 4
+    if (active) {
+      ctx.fillStyle = withAlphaOf(theme.accent, 0.32)
+      this.roundRect(x - 3, y - 3, HANDLE_W + 6, HANDLE_H + 6, 6)
+      ctx.fill()
+    }
+    // A rim in the background colour keeps the grip apart from the bars behind it.
+    ctx.fillStyle = theme.bg
+    this.roundRect(x - 1, y - 1, HANDLE_W + 2, HANDLE_H + 2, 4)
+    ctx.fill()
+    ctx.fillStyle = theme.accent
+    this.roundRect(x, y, HANDLE_W, HANDLE_H, 3)
+    ctx.fill()
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'
+    ctx.fillRect(x + 3, y + 5, 1, HANDLE_H - 10)
+    ctx.fillRect(x + HANDLE_W - 4, y + 5, 1, HANDLE_H - 10)
   }
 
   private miniBuckets(timeline: Timeline, scale: TimeScale, n: number): { buckets: Float32Array; cats: string[]; max: number; n: number } {
