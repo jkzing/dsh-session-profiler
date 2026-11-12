@@ -1,0 +1,17 @@
+# Bundle patch layer: the row loads the package's main entry as the host half
+# (a plain Cordis plugin); the `dsh.client` declaration in package.json makes
+# the web app load the ./client bundle as the browser half.
+#
+# Optional config (override in your profile's cordis.patch.yml):
+#
+#   - update:
+#       - id: dsh-session-trace
+#         config:
+#           categories:
+#             - id: database
+#               label: 数据库
+#               color: '#f97316'
+#               match: '\b(psql|mysql|prisma)\b'
+- insert:
+    - id: dsh-session-trace
+      name: dsh-session-trace

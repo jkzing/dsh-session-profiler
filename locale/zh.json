@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "耗时轨道 (dsh-session-trace)",
+    "description": "把一次会话画成 trace：按类别分道的调用轨道图、火焰图和耗时统计，看清时间花在模型、工具还是等待上。"
+  }
+}

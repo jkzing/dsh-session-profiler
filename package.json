@@ -1,0 +1,71 @@
+{
+  "name": "dsh-session-trace",
+  "version": "0.1.0",
+  "description": "A DeepSeek Harness plugin that turns a session into a trace: swim-lane tracks, a flame graph and timing statistics for model calls, tool calls and background processes.",
+  "icon": "icon.svg",
+  "author": "jkzing",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.2-rc.1"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "icon.svg",
+    "locale/*.json",
+    "lib/client.js",
+    "lib/index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test && npm run build",
+    "trace": "node scripts/dump-trace.mjs",
+    "preview": "node scripts/preview.mjs",
+    "register": "dsh plugin --profile web add .",
+    "unregister": "dsh plugin --profile web remove dsh-session-trace",
+    "prepare": "node scripts/build.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "trace",
+    "flamegraph",
+    "timeline",
+    "profiling"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.31",
+    "esbuild": "^0.28.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "~5.9.0"
+  }
+}
