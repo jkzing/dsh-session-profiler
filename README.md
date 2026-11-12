@@ -109,6 +109,20 @@ DSH_HOME=/tmp/dsh-home dsh plugin --profile web add "$PWD"
 DSH_HOME=/tmp/dsh-home dsh web --no-open --port 47311
 ```
 
+## 发布
+
+推送 `v*` 标签后，[publish.yml](.github/workflows/publish.yml) 会跑一遍 `pnpm check` 并发布到 npm。认证用 npm 的 trusted publishing，仓库里不存 token。
+
+```bash
+pnpm version patch   # 改版本号、提交并打上 v 标签；也可以是 minor / major / 具体版本号
+```
+
+```bash
+git push --follow-tags
+```
+
+带预发布后缀的版本（如 `0.2.0-rc.1`）发布到 `next`，其余发布到 `latest`。标签与 `package.json` 里的版本号不一致时不会发布。
+
 ## License
 
 MIT

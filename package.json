@@ -5,6 +5,12 @@
   "icon": "icon.svg",
   "author": "jkzing",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jkzing/dsh-session-profiler.git"
+  },
+  "homepage": "https://github.com/jkzing/dsh-session-profiler#readme",
+  "bugs": "https://github.com/jkzing/dsh-session-profiler/issues",
   "type": "module",
   "packageManager": "pnpm@12.10.1",
   "engines": {
