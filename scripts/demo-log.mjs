@@ -3,7 +3,7 @@
  * four turns over about three and a half hours, with long-lived dev servers,
  * parallel calls, failures, subagents, an approval and a call that never
  * returned. The scenario is made up. Deterministic: the same seed always
- * yields the same log.
+ * yields the same log, and the language only changes the wording.
  */
 
 function mulberry32(seed) {
@@ -39,16 +39,60 @@ const FILES = [
   'migrations/0042_orders_cursor_index.sql', 'package.json',
 ]
 
+/** Everything a person wrote in the session, per language. */
+const TEXT = {
+  zh: {
+    title: '订单列表分页与导出',
+    done: '已完成这一步，接下来继续验证。',
+    approval: '需要写入工作区之外的缓存目录',
+    subagents: ['梳理订单查询的调用链', '检查列表页的渲染开销', '调研游标分页的做法'],
+    prompts: [
+      '订单列表数据多了以后很慢，先看看现在是怎么查询和渲染的，给出分页方案',
+      '按游标分页的方案实现，接口和页面都要改',
+      '再加一个导出 CSV 的功能，数据量大的时候不能把内存撑爆',
+      '端到端测试卡住了先不管，把已有改动整理好提 PR',
+    ],
+    phases: [
+      ['梳理现有查询与页面'],
+      ['实现游标分页接口', '改造列表页', '补充测试'],
+      ['设计流式导出', '实现导出接口', '压测与内存排查'],
+      ['清理与自测', '提交并创建 PR'],
+    ],
+    database: '数据库',
+  },
+  en: {
+    title: 'Order list pagination and export',
+    done: 'That step is done; verifying it next.',
+    approval: 'needs to write to a cache directory outside the workspace',
+    subagents: ['Trace the order query call chain', 'Measure the list page render cost', 'Research keyset pagination'],
+    prompts: [
+      'The order list gets slow once there is a lot of data. Look at how it queries and renders today, then propose a pagination plan',
+      'Go with cursor pagination; both the API and the page need to change',
+      'Add a CSV export as well, and it must not blow up memory on large data sets',
+      'Leave the stuck end-to-end test for now; tidy up what we have and open a PR',
+    ],
+    phases: [
+      ['Map queries and page'],
+      ['Cursor API', 'List page', 'Add tests'],
+      ['Plan export', 'Build the export endpoint', 'Load test and memory'],
+      ['Tidy and test', 'Open PR'],
+    ],
+    database: 'Database',
+  },
+}
+const textFor = lang => TEXT[lang] ?? TEXT.zh
+
 let rand = mulberry32(1)
 function pick(list) { return list[Math.floor(rand() * list.length)] }
 function between([lo, hi]) { return Math.round(lo + (hi - lo) * rand() ** 2) }
 
 /**
- * @param {{ start?: number, seed?: number }} [options]
+ * @param {{ start?: number, seed?: number, lang?: 'zh' | 'en' }} [options]
  * @returns {{ header: object, events: object[] }}
  */
 export function demoLog(options = {}) {
   rand = mulberry32(options.seed ?? 7)
+  const text = textFor(options.lang)
   const start = options.start ?? new Date(2026, 2, 9, 10, 5, 0).getTime()
   const events = []
   let now = start
@@ -68,7 +112,7 @@ export function demoLog(options = {}) {
   }
 
   emit('model/selection', { provider: 'deepseek-official', model: 'deepseek-pro', reasoningEffort: 'high' })
-  emit('session/title', { title: '订单列表分页与导出' })
+  emit('session/title', { title: text.title })
 
   const modelCall = (turn, step, plan) => {
     emit('step/start', { turn, step })
@@ -93,7 +137,7 @@ export function demoLog(options = {}) {
     now = t + 15
     const content = plan.length > 0
       ? plan.map(([name]) => ({ type: 'tool-call', name }))
-      : [{ type: 'text', text: '已完成这一步，接下来继续验证。' }]
+      : [{ type: 'text', text: text.done }]
     emit('assistant/message', {
       turn, step, stream,
       message: { role: 'assistant', content, source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-pro' } },
@@ -108,7 +152,7 @@ export function demoLog(options = {}) {
     const s = now
     if (options.approval) {
       later(40)
-      emit('approval/asked', { id: `ap_${callSeq}`, toolName: name, callId, reason: 'escalate sandbox: 需要写入工作区之外的缓存目录' })
+      emit('approval/asked', { id: `ap_${callSeq}`, toolName: name, callId, reason: `escalate sandbox: ${text.approval}` })
       later(between([6000, 38_000]))
       emit('approval/decided', { id: `ap_${callSeq}`, outcome: 'allowed-once' })
     }
@@ -205,7 +249,7 @@ export function demoLog(options = {}) {
     toolCall(number, step, ['bash', { command, run_in_background: true }, [0, 0]], { background: minutes * 60_000, ...options })
   }
   const subagents = (number, step) => {
-    for (const label of ['梳理订单查询的调用链', '检查列表页的渲染开销', '调研游标分页的做法']) {
+    for (const label of text.subagents) {
       const callId = toolCall(number, step, ['subagent', { description: label, prompt: '…' }, [80, 200]])
       const childId = `child-${callId}`
       emit('subagent/catalog', { version: 0, childId, childCreatedAt: now - 60, mode: 'continuable', label })
@@ -217,25 +261,25 @@ export function demoLog(options = {}) {
     toolCall(number, step, ['bash', { command: 'pnpm install --frozen-lockfile' }, [18_000, 40_000]], { approval: true, error: false })
   }
 
-  turn(1, '订单列表数据多了以后很慢，先看看现在是怎么查询和渲染的，给出分页方案', [
-    { name: '梳理现有查询与页面', minutes: 15, mix: ['read', 'grep', 'glob', 'mcp', 'read', 'db', 'shot'], once: [subagents] },
+  turn(1, text.prompts[0], [
+    { name: text.phases[0][0], minutes: 15, mix: ['read', 'grep', 'glob', 'mcp', 'read', 'db', 'shot'], once: [subagents] },
   ])
   later(230_000)
-  turn(2, '按游标分页的方案实现，接口和页面都要改', [
-    { name: '实现游标分页接口', minutes: 12, mix: ['edit', 'edit', 'read', 'write', 'grep', 'db'], once: [background('docker compose up db', 132, { killed: true })] },
-    { name: '改造列表页', minutes: 14, mix: ['edit', 'shot', 'read', 'script', 'edit'], once: [background('pnpm dev --host 0.0.0.0', 96, { killed: true })] },
-    { name: '补充测试', minutes: 11, mix: ['edit', 'build', 'build', 'read', 'git'], once: [approval] },
+  turn(2, text.prompts[1], [
+    { name: text.phases[1][0], minutes: 12, mix: ['edit', 'edit', 'read', 'write', 'grep', 'db'], once: [background('docker compose up db', 132, { killed: true })] },
+    { name: text.phases[1][1], minutes: 14, mix: ['edit', 'shot', 'read', 'script', 'edit'], once: [background('pnpm dev --host 0.0.0.0', 96, { killed: true })] },
+    { name: text.phases[1][2], minutes: 11, mix: ['edit', 'build', 'build', 'read', 'git'], once: [approval] },
   ])
   later(4_300_000)
-  turn(3, '再加一个导出 CSV 的功能，数据量大的时候不能把内存撑爆', [
-    { name: '设计流式导出', minutes: 9, mix: ['read', 'web', 'web', 'grep', 'db'] },
-    { name: '实现导出接口', minutes: 22, mix: ['edit', 'edit', 'script', 'db', 'read', 'build'], once: [background('pnpm test --watch orders', 34)] },
-    { name: '压测与内存排查', minutes: 19, mix: ['script', 'script', 'db', 'shot', 'read', 'edit'] },
+  turn(3, text.prompts[2], [
+    { name: text.phases[2][0], minutes: 9, mix: ['read', 'web', 'web', 'grep', 'db'] },
+    { name: text.phases[2][1], minutes: 22, mix: ['edit', 'edit', 'script', 'db', 'read', 'build'], once: [background('pnpm test --watch orders', 34)] },
+    { name: text.phases[2][2], minutes: 19, mix: ['script', 'script', 'db', 'shot', 'read', 'edit'] },
   ], { hang: true })
   later(170_000)
-  turn(4, '端到端测试卡住了先不管，把已有改动整理好提 PR', [
-    { name: '清理与自测', minutes: 13, mix: ['read', 'edit', 'build', 'script', 'git'] },
-    { name: '提交并创建 PR', minutes: 8, mix: ['git', 'git', 'build', 'read'] },
+  turn(4, text.prompts[3], [
+    { name: text.phases[3][0], minutes: 13, mix: ['read', 'edit', 'build', 'script', 'git'] },
+    { name: text.phases[3][1], minutes: 8, mix: ['git', 'git', 'build', 'read'] },
   ])
 
   settleDue()
@@ -245,7 +289,10 @@ export function demoLog(options = {}) {
   }
 }
 
-/** A custom lane the demo is drawn with, as a profile would configure one. */
-export const DEMO_CATEGORIES = [
-  { id: 'database', label: '数据库', color: '#f97316', match: '\\b(psql|prisma)\\b' },
-]
+/**
+ * A custom lane the demo is drawn with, as a profile would configure one.
+ * @param {'zh' | 'en'} [lang]
+ */
+export function demoCategories(lang) {
+  return [{ id: 'database', label: textFor(lang).database, color: '#f97316', match: '\\b(psql|prisma)\\b' }]
+}

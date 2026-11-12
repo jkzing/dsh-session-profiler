@@ -1,47 +1,51 @@
+![dsh-session-profiler: see where a session's time went](docs/hero.png)
+
 # dsh-session-profiler
 
-把一次 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）会话画成时间线：按类别分道的**调用轨迹图**、**火焰图**和**耗时统计**，看清时间花在模型、工具，还是等人上。
+English | [简体中文](README.zh-CN.md)
 
-![调用轨迹](docs/tracks.png)
+Turns a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) session into a timeline: **call tracks** in one lane per category, a **flame graph** and **timing statistics**, so you can see whether the time went to the model, to tools, or to waiting on a person.
 
-安装后，每个会话的标签栏里会多出一个 **分析** 标签页（在「轨迹」右边）。
+![Call tracks](docs/tracks.png)
 
-## 能看到什么
+Once installed, every session gets a **Profiler** tab in its tab bar (to the right of Trajectory).
 
-- **轨迹**：每个类别一条泳道（模型推理、构建 / 测试、命令 / 脚本、版本控制、读文件 / 搜索、改代码、联网、图像 / 界面、子智能体、MCP 工具、等待用户、其他），并行的调用自动分行。
-- **火焰图**：按嵌套深度排布——步骤 → 模型与工具调用 → 子调用 / 后台进程。
-- **统计**：按类别、按工具的次数 / 累计 / 平均 / 最长 / 失败数，以及最慢的 20 次调用（点一行跳回轨迹并定位）。
-- **概览**：最上面一条，整个会话各类别的忙闲分布，带自己的时间刻度；亮起的一段是下方图表当前显示的范围。
-- **轮次与阶段**：时间轴下面两行。阶段取自会话里的 todo 列表——哪一项是「进行中」，这段时间就归它；没有 todo 的轮次用该轮的提问作标题。
-- **耗时构成**：把轮次内的时间切成 模型 / 工具 / 等待用户 / 其他开销 四份，加起来等于活跃时间。另有总时长、空闲、平均首字耗时、Token。
-- **模型调用的内部分段**：等待首字、思考、输出回复、生成工具调用参数，来自日志里带时间戳的流。
-- **后台进程**（斜纹）：`run_in_background` 启动、工具调用返回后仍在运行的进程，画到它真正结束为止。
-- **失败**（红框）、**没有返回事件的调用**（虚线，比如轮次被中止）、**运行中**的调用（实时会话里随时间延伸）。
-- **折叠空闲**：轮次之间超过一分钟的空档折成一条窄带，否则一个跨了几天的会话只剩几根细线。
+## What you get
 
-操作：滚轮缩放（在左侧标签列上滚动则是上下滚动泳道），拖拽平移，点击看详情（参数与结果按需加载），双击聚焦到某个调用 / 阶段 / 轮次，顶部概览条里拖动视窗来平移、拖两侧的手柄来改变范围，搜索框按命令或文件名高亮。键盘：`+` `-` 缩放，`0` 全览，方向键平移，`Esc` 取消选中。
+- **Tracks**: one swim lane per category (Model, Build / test, Commands, Version control, Read / search, Edit code, Network, Images / UI, Subagents, MCP tools, Waiting on user, Other). Calls that overlap are stacked on separate rows.
+- **Flame**: laid out by nesting depth — steps → model and tool calls → sub-calls and background processes.
+- **Stats**: count, total, average, longest and failures per category and per tool, plus the 20 slowest calls (click a row to jump back to the tracks and locate it).
+- **Overview**: a strip at the very top showing how busy each category was across the whole session, with its own time scale. The lit window is the range the chart below is showing.
+- **Turns and phases**: two rows under the time axis. Phases come from the session's todo list — whichever item is "in progress" owns that stretch of time. A turn without todos is titled with its prompt.
+- **Time breakdown**: time inside turns is split into Model / Tools / Waiting on user / Other, which add up to the active time. Total duration, idle time, average time to first token and token counts are shown alongside.
+- **Segments inside a model call**: time to first token, reasoning, answer, and tool-call arguments, taken from the timestamped stream in the log.
+- **Background processes** (hatched): processes started with `run_in_background` that keep running after the tool call returns, drawn until they actually finish.
+- **Failures** (red outline), **calls with no result event** (dashed — for example when the turn was aborted), and **running** calls (they keep growing in a live session).
+- **Fold idle**: gaps of more than a minute between turns collapse into a narrow band; otherwise a session spread over several days is nothing but a few thin lines.
 
-正在运行的会话会自动刷新，只传输变化的部分。
+Controls: scroll to zoom (scrolling over the label column on the left scrolls the lanes instead), drag to pan, click for details (arguments and results load on demand), double-click to focus on a call, phase or turn, drag the window in the overview strip to pan or its side handles to change the range, and use the search box to highlight by command or file name. Keyboard: `+` `-` zoom, `0` fit, arrow keys pan, `Esc` clears the selection.
 
-## 安装
+A running session refreshes on its own, and only the changes are transferred.
 
-需要 dsh `>= 0.2.2-rc.1`（在 0.2.2-rc.1 上验证过）。
+## Install
+
+Requires dsh `>= 0.2.2-rc.1` (verified on 0.2.2-rc.1).
 
 ```bash
 git clone https://github.com/jkzing/dsh-session-profiler.git && cd dsh-session-profiler
-pnpm install         # 会顺带构建出 lib/
+pnpm install         # also builds lib/
 dsh plugin --profile web add .
 ```
 
-然后重启 `dsh web`。卸载：
+Then restart `dsh web`. To uninstall:
 
 ```bash
 dsh plugin --profile web remove dsh-session-profiler
 ```
 
-## 自定义泳道
+## Custom lanes
 
-内置分类是通用的。想要项目专属的泳道（比如把数据库相关的命令单独列一道），在 profile 的 `cordis.patch.yml`（`~/.dsh/profiles/web/cordis.patch.yml`）里加：
+The built-in categories are generic. For a lane specific to your project (say, database commands on a lane of their own), add this to the profile's `cordis.patch.yml` (`~/.dsh/profiles/web/cordis.patch.yml`):
 
 ```yaml
 - update:
@@ -49,57 +53,58 @@ dsh plugin --profile web remove dsh-session-profiler
       config:
         categories:
           - id: database
-            label: 数据库
+            label: Database
             color: '#f97316'
             match: '\b(psql|mysql|prisma)\b'
 ```
 
-`match` 是正则（不区分大小写），匹配对象是 `"<工具名> <一行描述>"`——对 `bash` 来说描述就是命令本身。自上而下第一条命中的规则生效，优先于内置分类。写错的规则会被跳过并在 dsh 日志里给出警告。
+`match` is a regular expression (case-insensitive) tested against `"<tool name> <one-line description>"` — for `bash` the description is the command itself. The first rule that matches, top to bottom, wins and takes precedence over the built-in categories. A malformed rule is skipped with a warning in the dsh log.
 
-## 工作方式
+## How it works
 
 ```
-src/shared   事件 → 时间线数据的纯函数（主机、测试、离线脚本共用）
-src/host     主机端：两个 POST 路由，读会话事件并折叠成时间线数据
-src/client   浏览器端：标签页、Canvas 图表、统计表、详情面板
+src/shared   pure functions from events to timeline data (shared by the host, the tests and the offline script)
+src/host     host half: two POST routes that read session events and fold them into timeline data
+src/client   browser half: the tab, the canvas charts, the stats tables and the detail panel
 ```
 
-- 主机端不订阅任何事件，也不往会话日志里写东西。每次请求通过 `sessionQuery.observeSession` 读取已提交的事件——在线会话走内存，冷会话走持久化。
-- `POST api/dsh-session-profiler/timeline { sessionId, since? }` 返回整份时间线数据，或自 `since` 以来变化的 span（span 的 id 只由日志前缀决定，所以增量合并是确定的）。
-- `POST api/dsh-session-profiler/span { sessionId, seq }` 返回某个 span 的参数与结果，点击时才取。
-- 浏览器端注册到 `conversation.view` 插槽。在这个标签页显示期间，对话的输入框会让出位置（有待处理的审批或计划评审时除外）。
+- The host half subscribes to no events and writes nothing to the session log. Each request reads the committed events through `sessionQuery.observeSession` — from memory for a live session, from storage for a cold one.
+- `POST api/dsh-session-profiler/timeline { sessionId, since? }` returns the whole timeline, or the spans that changed since `since` (a span's id depends only on the log prefix, so merging increments is deterministic).
+- `POST api/dsh-session-profiler/span { sessionId, seq }` returns one span's arguments and result, fetched only on click.
+- The browser half registers into the `conversation.view` slot. While this tab is showing, the conversation's input box gets out of the way (unless an approval or a plan review is pending).
 
-用到的事件：`turn/*`、`step/*`、`assistant/message`、`assistant/attempt`、`tool/call`、`tool/result`、`tool/ptc-dispatch*`、`job/registered`、`job/settled`、`approval/*`、`subagent/catalog`、`agent/inbox/spliced`、`todo/write`、`llm/retry-started`、`compaction/*`、`command/*`。
+Events used: `turn/*`, `step/*`, `assistant/message`, `assistant/attempt`, `tool/call`, `tool/result`, `tool/ptc-dispatch*`, `job/registered`, `job/settled`, `approval/*`, `subagent/catalog`, `agent/inbox/spliced`, `todo/write`, `llm/retry-started`, `compaction/*`, `command/*`.
 
-## 已知限制
+## Known limitations
 
-- 后台进程依赖 `job/*` 事件；较早版本的 dsh 写下的会话没有这些事件，那里的后台命令只显示为一次很短的工具调用。
-- 子智能体只画出它「从启动到结束」的时间段，不展开子会话内部的调用。
-- 阶段来自 todo 列表，不做语义总结；没用 todo 的会话每轮只有一个阶段。
-- fork 出来的会话只显示它自己的部分，不含继承自父会话的历史。
-- 泳道里的行数有上限（模型 2 行，其余 5 行），并行度更高时会叠在同一行。
+- Background processes rely on `job/*` events. Sessions written by older versions of dsh don't have them, so a background command there shows up as one very short tool call.
+- A subagent is drawn only as its start-to-finish span; the calls inside the child session are not expanded.
+- Phases come from the todo list, with no semantic summarising. A session that doesn't use todos has one phase per turn.
+- A forked session shows only its own part, not the history inherited from its parent.
+- Rows per lane are capped (2 for the model, 5 for the rest); beyond that, parallel calls overlap on the same row.
 
-## 开发
+## Development
 
 ```bash
-pnpm check           # 类型检查 + 测试 + 构建
-pnpm watch           # 改动即重新构建
-pnpm preview         # 不依赖 dsh 的预览页：http://127.0.0.1:4173/
+pnpm check           # type check + tests + build
+pnpm watch           # rebuild on change
+pnpm preview         # a preview page that doesn't need dsh: http://127.0.0.1:4173/
 ```
 
-预览页用一份合成的会话（`scripts/demo-log.mjs`）驱动真实的主机端和浏览器端代码：
+The preview page drives the real host and browser code with a synthetic session (`scripts/demo-log.mjs`):
 
-- `?session=demo` 一份三个多小时的完整会话；`?session=live` 同一份日志按真实时间回放，用来看轮询
-- `?view=flame|stats`、`?theme=light`、`?lang=en`
-- `pnpm preview ~/.dsh/sessions/<工作区>/<会话>` 加载一份真实会话（需要 `zstd` 命令行）
+- `?session=demo` is a complete session of a bit over three hours; `?session=live` replays the same log in real time, for watching the polling
+- `?view=flame|stats`, `?theme=light`, `?lang=en`
+- `pnpm preview --lang en` writes the synthetic session itself in English (the screenshot above was taken this way)
+- `pnpm preview ~/.dsh/sessions/<workspace>/<session>` loads a real session (needs the `zstd` command-line tool)
 
-离线把一份会话折叠成 JSON：
+To fold a session into JSON offline:
 
 ```bash
-pnpm timeline ~/.dsh/sessions/<工作区>/<会话> --summary
+pnpm timeline ~/.dsh/sessions/<workspace>/<session> --summary
 ```
 
-想在真实的 dsh 里试而不动自己的 profile，可以用一个临时的 `DSH_HOME`：
+To try it in a real dsh without touching your own profile, use a throwaway `DSH_HOME`:
 
 ```bash
 DSH_HOME=/tmp/dsh-home dsh plugin --profile web add "$PWD"
@@ -109,19 +114,19 @@ DSH_HOME=/tmp/dsh-home dsh plugin --profile web add "$PWD"
 DSH_HOME=/tmp/dsh-home dsh web --no-open --port 47311
 ```
 
-## 发布
+## Releasing
 
-推送 `v*` 标签后，[publish.yml](.github/workflows/publish.yml) 会跑一遍 `pnpm check` 并发布到 npm。认证用 npm 的 trusted publishing，仓库里不存 token。
+Pushing a `v*` tag makes [publish.yml](.github/workflows/publish.yml) run `pnpm check` and publish to npm. Authentication uses npm trusted publishing; no token is stored in the repository.
 
 ```bash
-pnpm version patch   # 改版本号、提交并打上 v 标签；也可以是 minor / major / 具体版本号
+pnpm version patch   # bumps the version, commits and adds the v tag; minor / major / an exact version work too
 ```
 
 ```bash
 git push --follow-tags
 ```
 
-带预发布后缀的版本（如 `0.2.0-rc.1`）发布到 `next`，其余发布到 `latest`。标签与 `package.json` 里的版本号不一致时不会发布。
+Versions with a prerelease suffix (such as `0.2.0-rc.1`) are published to `next`, everything else to `latest`. Nothing is published when the tag and the version in `package.json` disagree.
 
 ## License
 

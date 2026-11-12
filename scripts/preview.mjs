@@ -2,7 +2,7 @@
 /**
  * Standalone preview: serves the built plugin outside dsh.
  *
- *   node scripts/preview.mjs [--port 4173] [session dir | log file]...
+ *   node scripts/preview.mjs [--port 4173] [--lang en] [session dir | log file]...
  *
  * The page stands in for the dsh shell (module loader, slot and locale
  * services); the server stands in for the host (it mounts the real host half
@@ -12,24 +12,29 @@
  *   ?session=live   the same log replayed in real time, to exercise polling
  *   ?session=<id>   a real session passed on the command line
  *
- * Also: ?theme=light, ?lang=en, ?view=flame|stats.
+ * Also: ?theme=light, ?lang=en|zh, ?view=flame|stats.
+ *
+ * `--lang en` writes the synthetic session in English and makes English the
+ * page's default language; `?lang=` only switches the interface.
  */
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { demoLog, DEMO_CATEGORIES } from './demo-log.mjs'
+import { demoLog, demoCategories } from './demo-log.mjs'
 import { readLog, resolveLog } from './dump-timeline.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
 const portFlag = args.indexOf('--port')
 const port = portFlag >= 0 ? Number(args.splice(portFlag, 2)[1]) : 4173
+const langFlag = args.indexOf('--lang')
+const lang = langFlag >= 0 && args.splice(langFlag, 2)[1] === 'en' ? 'en' : 'zh'
 
 const sessions = new Map()
-sessions.set('demo', { ...demoLog(), live: false })
+sessions.set('demo', { ...demoLog({ lang }), live: false })
 // Replay: the demo log started 40 minutes ago, revealed as the clock advances.
-const replay = demoLog({ start: Date.now() - 40 * 60_000 })
+const replay = demoLog({ start: Date.now() - 40 * 60_000, lang })
 sessions.set('live', { header: { ...replay.header, id: 'live' }, events: replay.events, live: true })
 for (const input of args) {
   const { header, events } = readLog(resolveLog(input))
@@ -72,10 +77,10 @@ host.apply({
   effect: (effect) => { effect() },
   logger: { warn: (...parts) => console.warn(...parts) },
 // The demo's custom lane would only get in the way of a real session's own commands.
-}, { categories: args.length === 0 ? DEMO_CATEGORIES : [] })
+}, { categories: args.length === 0 ? demoCategories(lang) : [] })
 
 const page = `<!doctype html>
-<html lang="zh">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8">
 <title>dsh-session-profiler preview</title>
@@ -106,7 +111,7 @@ const page = `<!doctype html>
 </script>
 <script src="/client.js"></script>
 <script>
-  const lang = params.get('lang') === 'en' ? 'en' : 'zh'
+  const lang = ['en', 'zh'].includes(params.get('lang')) ? params.get('lang') : '${lang}'
   const dicts = {}
   let view = null
   const ctx = {

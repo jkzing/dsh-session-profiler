@@ -1,0 +1,224 @@
+<!doctype html>
+<!--
+  Source of the README banner: docs/hero.png, and docs/hero.zh-CN.png with ?lang=zh.
+
+  Render at 2x with headless Chrome, then keep the top 2560×960 (the window
+  is taller than the banner because headless Chrome's viewport is shorter
+  than its window):
+
+    chrome --headless=new --hide-scrollbars --window-size=1280,640 \
+      --force-device-scale-factor=2 --default-background-color=00000000 \
+      --screenshot=raw.png "file://$PWD/docs/hero.html"
+    ffmpeg -i raw.png -vf crop=2560:960:0:0 -frames:v 1 docs/hero.png
+
+  The lanes use the plugin's own colors (src/client/palette.ts) and marks:
+  hatched = background process, red outline = failed, dashed = never returned.
+  The spans are drawn from a seeded generator, so every render is the same.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dsh-session-profiler banner</title>
+<style>
+  :root {
+    --ink: #0f1420;
+    --line: #232b3d;
+    --text: #e6eaf2;
+    --text2: #9aa4b8;
+    --text3: #66708a;
+  }
+  html, body { margin: 0; background: transparent; }
+  .hero {
+    position: relative;
+    width: 1280px;
+    height: 480px;
+    border-radius: 22px;
+    overflow: hidden;
+    background: var(--ink);
+    color: var(--text);
+    font-family: "DIN Alternate", "Avenir Next", "PingFang SC", sans-serif;
+  }
+  .copy { position: absolute; left: 48px; top: 40px; }
+  .name {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  .name svg { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; }
+  .headline {
+    margin: 22px 0 0;
+    font-family: "DIN Condensed", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+    font-size: 104px;
+    font-weight: 700;
+    line-height: 0.92;
+    letter-spacing: -0.005em;
+  }
+  .sub {
+    margin: -9px 0 0;
+    font-size: 25px;
+    font-weight: 700;
+    color: var(--text2);
+  }
+  :lang(zh) .headline {
+    margin-top: 26px;
+    font-family: "PingFang SC", sans-serif;
+    font-size: 68px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: 0.02em;
+  }
+  :lang(zh) .sub { margin-top: 10px; font-family: "PingFang SC", sans-serif; font-size: 23px; font-weight: 500; }
+  .tracks { position: absolute; inset: 0; }
+  .tracks text { font-family: "DIN Alternate", "Avenir Next", "PingFang SC", sans-serif; }
+  .tracks .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<div class="hero">
+  <svg class="tracks" id="tracks" viewBox="0 0 1280 480" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div class="copy">
+    <p class="name">
+      <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect width="64" height="64" fill="#0f1524"/>
+        <rect x="10" y="14" width="30" height="8" rx="2.5" fill="#5b8def"/>
+        <rect x="16" y="26" width="14" height="8" rx="2.5" fill="#f59e42"/>
+        <rect x="33" y="26" width="21" height="8" rx="2.5" fill="#a78bfa"/>
+        <rect x="20" y="38" width="6" height="8" rx="2.5" fill="#f472b6"/>
+        <rect x="29" y="38" width="17" height="8" rx="2.5" fill="#34d399"/>
+        <path d="M10 53h44" stroke="#3b4660" stroke-width="2" stroke-linecap="round"/>
+        <path d="M18 51v4M32 51v4M46 51v4" stroke="#3b4660" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      dsh-session-profiler
+    </p>
+    <h1 class="headline" id="headline"></h1>
+    <p class="sub" id="sub"></p>
+  </div>
+</div>
+<script>
+  const zh = new URLSearchParams(location.search).get('lang') === 'zh'
+  document.documentElement.lang = zh ? 'zh' : 'en'
+  const COPY = zh
+    ? {
+        headline: '看清一次会话的时间花在哪',
+        sub: '为 DeepSeek Harness 会话画出调用轨迹、火焰图和耗时统计',
+        lanes: ['模型推理', '构建 / 测试', '命令 / 脚本', '改代码', '读文件 / 搜索'],
+        idle: '空闲 1.2h',
+      }
+    : {
+        headline: 'See where a session’s time went',
+        sub: 'Call tracks, a flame graph and timing stats for DeepSeek Harness sessions',
+        lanes: ['Model', 'Build / test', 'Commands', 'Edit code', 'Read / search'],
+        idle: 'idle 1.2h',
+      }
+  document.getElementById('headline').textContent = COPY.headline
+  document.getElementById('sub').textContent = COPY.sub
+
+  // Geometry of the chart half.
+  const W = 1280
+  const LEFT = 232          // where the label column ends and time begins
+  const AXIS = 254          // y of the time axis
+  const TOP = 266           // first lane
+  const TICK = 131          // px per 15 minutes
+  const FOLD = [846, 864]   // the folded idle gap between two turns
+  const COLORS = ['#5b8def', '#f59e42', '#a78bfa', '#f472b6', '#94a3b8']
+  const HEIGHTS = [36, 62, 36, 36, 36]
+  const lanes = []
+  HEIGHTS.reduce((y, h, i) => { lanes.push({ y, h, color: COLORS[i], label: COPY.lanes[i] }); return y + h }, TOP)
+  const BOTTOM = 480        // the chart runs off the bottom edge
+
+  function mulberry32(seed) {
+    let a = seed >>> 0
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0
+      let t = a
+      t = Math.imul(t ^ (t >>> 15), t | 1)
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+  const rand = mulberry32(42)
+  const between = (lo, hi) => lo + (hi - lo) * rand()
+
+  // A turn is a run of steps: the model thinks, then one tool runs, and so on.
+  const spans = []
+  const BAR = 16
+  const row = (lane, r = 0) => lanes[lane].y + (lane === 1 ? 7 : (lanes[lane].h - BAR) / 2) + r * 22
+  function turn(from, to, mix) {
+    let x = from
+    while (x < to) {
+      const think = between(4, 22)
+      spans.push({ lane: 0, x, w: Math.min(think, to - x) })
+      x += think + 1.5
+      if (x >= to) break
+      const lane = mix[Math.floor(rand() * mix.length)]
+      const w = lane === 1 ? between(6, 22) : between(2, 6.5)
+      spans.push({ lane, x, w })
+      x += w + between(1, 5)
+    }
+  }
+  turn(LEFT + 6, 470, [4, 4, 4, 2, 4, 3])
+  turn(486, 788, [3, 3, 3, 1, 4, 2, 3, 1])
+  turn(872, 1196, [1, 2, 2, 3, 4, 2, 1, 3])
+  turn(1212, W + 20, [3, 4, 1, 2])
+
+  // One build that failed.
+  spans.filter(span => span.lane === 1)[1].failed = true
+
+  const background = [
+    { x: 356, w: 458, text: '1.6h  pnpm dev --host 0.0.0.0' },
+    { x: 902, w: 262, text: '34m  pnpm test --watch orders' },
+  ]
+  // The call the second turn was aborted on: it has no result event.
+  const open = { x: 792, w: 44 }
+
+  const svg = []
+  const rect = (x, y, w, h, attrs) => svg.push(`<rect x="${x.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${h}" ${attrs}/>`)
+  svg.push(`<defs><pattern id="hatch" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+    <rect width="9" height="9" fill="#f59e42" fill-opacity="0.2"/><rect width="3.5" height="9" fill="#f59e42" fill-opacity="0.5"/></pattern></defs>`)
+
+  // Time axis and its grid.
+  for (let i = 0, x = LEFT + 44; x < W; i++, x += TICK) {
+    const minutes = 10 * 60 + 15 + i * 15 + (x > FOLD[0] ? 60 : 0)
+    const label = `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`
+    svg.push(`<line x1="${x}" y1="${AXIS}" x2="${x}" y2="${BOTTOM}" stroke="#232b3d" stroke-opacity="0.55"/>`)
+    svg.push(`<text class="mono" x="${x + 7}" y="${AXIS - 8}" font-size="13" fill="#66708a">${label}</text>`)
+    svg.push(`<line x1="${x}" y1="${AXIS - 20}" x2="${x}" y2="${AXIS}" stroke="#232b3d"/>`)
+  }
+  svg.push(`<line x1="0" y1="${AXIS}" x2="${W}" y2="${AXIS}" stroke="#232b3d"/>`)
+
+  // Lanes: a rule under each, a swatch and a name in the label column.
+  for (const lane of lanes) {
+    if (lane.y + lane.h < BOTTOM - 12) svg.push(`<line x1="0" y1="${lane.y + lane.h}" x2="${W}" y2="${lane.y + lane.h}" stroke="#232b3d"/>`)
+    const mid = lane.y + (lane.h === 36 ? 18 : 15)
+    rect(48, mid - 5, 10, 10, `rx="2.5" fill="${lane.color}"`)
+    svg.push(`<text x="68" y="${mid + 5.5}" font-size="16" font-weight="700" fill="#e6eaf2">${lane.label}</text>`)
+  }
+  svg.push(`<line x1="${LEFT}" y1="${AXIS}" x2="${LEFT}" y2="${BOTTOM}" stroke="#232b3d"/>`)
+
+  for (const span of spans) {
+    if (span.x + span.w > FOLD[0] - 2 && span.x < FOLD[1] + 2) continue
+    const y = row(span.lane)
+    rect(span.x, y, Math.max(span.w, 2), BAR, `rx="2" fill="${lanes[span.lane].color}"`)
+    if (span.failed) rect(span.x - 1.5, y - 1.5, span.w + 3, BAR + 3, 'rx="3" fill="none" stroke="#ef4444" stroke-width="2"')
+  }
+  for (const job of background) {
+    const y = row(1, 1)
+    rect(job.x, y, job.w, BAR + 2, 'rx="2" fill="url(#hatch)" stroke="#f59e42" stroke-opacity="0.9"')
+    svg.push(`<text class="mono" x="${job.x + 8}" y="${y + 13.5}" font-size="12.5" font-weight="600" fill="#fff4e3">${job.text}</text>`)
+  }
+  rect(open.x, row(1), open.w, BAR, 'rx="2" fill="#f59e42" fill-opacity="0.16" stroke="#f59e42" stroke-dasharray="4 3"')
+
+  // The idle gap, folded into a narrow band.
+  rect(FOLD[0], AXIS, FOLD[1] - FOLD[0], BOTTOM - AXIS, 'fill="#1b2336" stroke="#232b3d"')
+  const fx = (FOLD[0] + FOLD[1]) / 2 + 4
+  const fy = (AXIS + BOTTOM) / 2
+  svg.push(`<text x="${fx}" y="${fy}" font-size="12" fill="#9aa4b8" text-anchor="middle" transform="rotate(-90 ${fx} ${fy})">${COPY.idle}</text>`)
+
+  document.getElementById('tracks').innerHTML = svg.join('')
+</script>
+</body>
+</html>
