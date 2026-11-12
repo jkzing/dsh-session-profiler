@@ -603,7 +603,7 @@ export class TraceChart {
       line('dst-tip-title', `${t('turn', { n: turn.turn })}${turn.reason !== undefined && turn.reason !== 'completed' ? ` · ${turn.reason}` : ''}`)
       line('dst-tip-label', turn.label)
       line('dst-tip-time', range(turn.s, turn.e))
-      line('dst-tip-meta', `${turn.steps} ${t('row.steps')}`)
+      line('dst-tip-meta', t('turn.steps', { n: turn.steps }))
     } else if (hit.type === 'phase') {
       line('dst-tip-title', this.phaseLabel(hit.phase))
       line('dst-tip-time', range(hit.phase.s, hit.phase.e))
